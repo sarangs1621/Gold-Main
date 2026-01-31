@@ -6823,13 +6823,14 @@ async def create_invoice(invoice_data: dict, current_user: User = Depends(requir
     await create_audit_log(current_user.id, current_user.full_name, "invoice", invoice.id, "create")
     return invoice
 
-@api_router.get("/accounts", response_model=List[Account])
+@api_router.get("/accounts")
 async def get_accounts(current_user: User = Depends(require_permission('finance.view'))):
     if not user_has_permission(current_user, 'finance.view'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to view finance data")
     
     accounts = await db.accounts.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
-    return accounts
+    # Convert Decimal128 to float for JSON serialization
+    return decimal_to_float(accounts)
 
 @api_router.get("/accounts/{account_id}", response_model=Account)
 async def get_account(account_id: str, current_user: User = Depends(require_permission('finance.view'))):
