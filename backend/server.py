@@ -951,11 +951,21 @@ class TokenResponse(BaseModel):
     csrf_token: str
 
 class InventoryHeader(BaseModel):
+    """
+    MODULE 7: Inventory Header - Reference Data ONLY
+    
+    CRITICAL: This is NOT the source of truth for stock levels.
+    - current_qty and current_weight are DEPRECATED (kept for backward compatibility)
+    - TRUE stock levels MUST be calculated from StockMovements
+    - This table stores category metadata only (name, created_at, etc.)
+    
+    To get actual stock: Use calculate_stock_from_movements() function
+    """
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
-    current_qty: float = 0.0  # Direct stock tracking
-    current_weight: float = 0.0  # Direct weight tracking in grams
+    current_qty: float = 0.0  # DEPRECATED: Use calculate_stock_from_movements()
+    current_weight: float = 0.0  # DEPRECATED: Use calculate_stock_from_movements()
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str
