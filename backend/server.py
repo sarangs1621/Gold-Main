@@ -1195,23 +1195,31 @@ class ReturnItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     description: str
     qty: int
-    weight_grams: float  # Input as float, stored as Decimal128 with 3 decimal precision
+    weight_grams: Decimal = Field(default=Decimal('0.000'))  # Decimal with 3 decimal precision (NO FLOATS)
     purity: int
-    amount: float = 0.0  # Input as float, stored as Decimal128 with 2 decimal precision
+    amount: Decimal = Field(default=Decimal('0.00'))  # Decimal with 2 decimal precision (NO FLOATS)
 
 class Return(BaseModel):
     """
     Return model for tracking sales returns and purchase returns.
     
+    ⚠️ CRITICAL RULES (MODULE 6):
+    1. NO automatic inventory impact on finalize
+    2. Inventory adjustment is MANUAL ONLY (via inventory_action_required flag)
+    3. Sales Return refund → DEBIT transaction
+    4. Purchase Return refund → CREDIT transaction
+    5. NO floats - all weights/amounts use Decimal
+    6. Finalized returns are IMMUTABLE
+    
     Sales Return: Customer returns items from an invoice
-    - Stock IN (returned goods back to inventory)
-    - Money refund → Transaction (Debit)
+    - NO automatic Stock IN (manual adjustment required)
+    - Money refund → Transaction (DEBIT)
     - Gold refund → GoldLedgerEntry (OUT - shop gives gold to customer)
     - Update customer outstanding
     
     Purchase Return: Shop returns items to vendor from a purchase
-    - Stock OUT (returned to vendor)
-    - Money refund → Transaction (Credit - vendor refunds money to us)
+    - NO automatic Stock OUT (manual adjustment required)
+    - Money refund → Transaction (CREDIT - vendor refunds money to us)
     - Gold refund → GoldLedgerEntry (IN - vendor returns gold to us)
     - Update vendor payable
     """
@@ -1227,14 +1235,14 @@ class Return(BaseModel):
     party_type: str  # "customer" or "vendor"
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     items: List[ReturnItem] = []
-    total_weight_grams: float = 0.0  # Input as float, stored as Decimal128 with 3 decimals
-    total_amount: float = 0.0  # Input as float, stored as Decimal128 with 2 decimals
+    total_weight_grams: Decimal = Field(default=Decimal('0.000'))  # Decimal with 3 decimals (NO FLOATS)
+    total_amount: Decimal = Field(default=Decimal('0.00'))  # Decimal with 2 decimals (NO FLOATS)
     reason: Optional[str] = None  # Return reason
     
     # Refund details (optional at draft creation, required at finalization)
     refund_mode: Optional[str] = None  # "money" | "gold" | "mixed" - Required at finalize, optional at draft
-    refund_money_amount: float = 0.0  # Input as float, stored as Decimal128 with 2 decimals
-    refund_gold_grams: float = 0.0  # Input as float, stored as Decimal128 with 3 decimals
+    refund_money_amount: Decimal = Field(default=Decimal('0.00'))  # Decimal with 2 decimals (NO FLOATS)
+    refund_gold_grams: Decimal = Field(default=Decimal('0.000'))  # Decimal with 3 decimals (NO FLOATS)
     refund_gold_purity: Optional[int] = None  # Purity of gold being refunded
     
     # Payment details for money refund
@@ -1247,10 +1255,16 @@ class Return(BaseModel):
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[str] = None
     
+    # Inventory management (MODULE 6 CRITICAL)
+    inventory_action_required: bool = False  # Set to True on finalize - admin must manually adjust inventory
+    inventory_action_notes: Optional[str] = None  # Notes for manual inventory adjustment
+    inventory_action_completed: bool = False  # Set to True when admin completes manual adjustment
+    inventory_action_completed_at: Optional[datetime] = None
+    inventory_action_completed_by: Optional[str] = None
+    
     # Related records created on finalization
     transaction_id: Optional[str] = None  # Transaction record for money refund
     gold_ledger_id: Optional[str] = None  # Gold ledger entry for gold refund
-    stock_movement_ids: List[str] = []  # Stock movement records
     
     # Audit fields
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
