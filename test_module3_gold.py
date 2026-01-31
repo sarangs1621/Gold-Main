@@ -18,7 +18,7 @@ TEST_USER = {
 
 def login():
     """Login and get access token"""
-    response = requests.post(f"{BASE_URL}/login", json=TEST_USER)
+    response = requests.post(f"{BASE_URL}/auth/login", json=TEST_USER)
     if response.status_code == 200:
         token = response.json().get('access_token')
         print(f"✓ Login successful")
