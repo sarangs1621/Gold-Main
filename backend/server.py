@@ -5967,23 +5967,30 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                 # Even if no inventory header exists, the movement must be recorded
                 # CRITICAL: Use new MODULE 7 structure
                 # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
-                movement = StockMovement(
-                    movement_type="OUT",  # MODULE 7: Simplified taxonomy
-                    source_type="SALE",  # MODULE 7: Source tracking
-                    source_id=invoice.id,  # MODULE 7: Link to invoice
-                    header_id=header_id_for_movement,  # May be None if no header found
-                    header_name=header_name_for_movement,
-                    description=f"Sale - Invoice {invoice.invoice_number}",
-                    weight=Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001')),  # MODULE 7: Total weight (item.weight * qty)
-                    purity=item.purity,
-                    created_by=current_user.id,
+                weight_decimal = Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001'))
+                movement_dict = {
+                    "id": str(uuid.uuid4()),
+                    "date": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
+                    "movement_type": "OUT",  # MODULE 7: Simplified taxonomy
+                    "source_type": "SALE",  # MODULE 7: Source tracking
+                    "source_id": invoice.id,  # MODULE 7: Link to invoice
+                    "header_id": header_id_for_movement,  # May be None if no header found
+                    "header_name": header_name_for_movement,
+                    "description": f"Sale - Invoice {invoice.invoice_number}",
+                    "weight": Decimal128(weight_decimal),  # MODULE 7: Convert to Decimal128 for MongoDB
+                    "purity": item.purity,
+                    "created_by": current_user.id,
+                    "notes": None,
+                    "audit_reference": None,
                     # Legacy fields for backward compatibility
-                    qty_delta=-item.qty,
-                    weight_delta=-(item.weight * item.qty),
-                    reference_type="invoice",
-                    reference_id=invoice.id
-                )
-                await db.stock_movements.insert_one(movement.model_dump())
+                    "qty_delta": -item.qty,
+                    "weight_delta": -(item.weight * item.qty),
+                    "reference_type": "invoice",
+                    "reference_id": invoice.id,
+                    "is_deleted": False
+                }
+                await db.stock_movements.insert_one(movement_dict)
         
         # If there were stock errors, rollback the invoice finalization
         # CRITICAL: Status rollback must NOT delete timestamps (audit safety)
