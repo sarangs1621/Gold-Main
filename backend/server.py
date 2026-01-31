@@ -2784,43 +2784,6 @@ async def reconcile_inventory(current_user: User = Depends(require_permission('i
         },
         "details": reconciliation_results
     }
-            if movement_type in ['IN', 'Stock IN']:
-                calculated_weight += abs(weight)
-            elif movement_type in ['OUT', 'Stock OUT']:
-                calculated_weight -= abs(weight)
-            elif movement_type in ['ADJUSTMENT', 'Adjustment']:
-                # Adjustments can be positive or negative
-                calculated_weight += weight
-        
-        # Get current totals from header
-        current_weight = Decimal(str(header.get('current_weight', 0)))
-        current_qty = header.get('current_qty', 0)
-        
-        # Calculate discrepancy
-        discrepancy = calculated_weight - current_weight
-        
-        reconciliation_results.append({
-            "header_id": header_id,
-            "header_name": header_name,
-            "current_qty": current_qty,
-            "current_weight_header": float(current_weight),
-            "calculated_weight_movements": float(calculated_weight),
-            "discrepancy": float(discrepancy),
-            "matches": abs(discrepancy) < 0.001,  # Allow 0.001g tolerance for rounding
-            "movement_count": len(movements)
-        })
-    
-    # Summary statistics
-    total_discrepancies = sum(1 for r in reconciliation_results if not r['matches'])
-    
-    return {
-        "reconciliation_date": datetime.now(timezone.utc).isoformat(),
-        "performed_by": current_user.full_name,
-        "total_headers": len(reconciliation_results),
-        "headers_with_discrepancies": total_discrepancies,
-        "all_match": total_discrepancies == 0,
-        "details": reconciliation_results
-    }
 
 # ============================================================================
 # NEW ENDPOINTS FOR API COMPLETENESS
