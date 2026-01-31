@@ -1003,7 +1003,7 @@ class StockMovement(BaseModel):
     
     # MODULE 7: Core movement classification
     movement_type: str  # IN | OUT | ADJUSTMENT
-    source_type: str  # SALE | PURCHASE | MANUAL
+    source_type: Optional[str] = None  # SALE | PURCHASE | MANUAL (MODULE 7 - optional for legacy data)
     source_id: Optional[str] = None  # ID of invoice, purchase, or manual adjustment record
     
     # Inventory item reference
