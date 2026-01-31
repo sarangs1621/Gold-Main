@@ -2261,69 +2261,111 @@ async def get_stock_movements(header_id: Optional[str] = None, current_user: Use
 @api_router.post("/inventory/movements", response_model=StockMovement, status_code=201)
 async def create_stock_movement(movement_data: dict, current_user: User = Depends(require_permission('inventory.adjust'))):
     """
-    Create manual stock movement for inventory adjustments.
+    MODULE 7: Create manual stock adjustment ONLY.
     
-    CRITICAL RESTRICTION - Production ERP Compliance:
-    - Stock OUT movements are PROHIBITED via manual entry
-    - Stock can only be reduced through Invoice Finalization (POST /api/invoices/{id}/finalize)
-    - This ensures proper audit trail, accounting accuracy, and GST compliance
+    🚫 ABSOLUTE RULES (NON-NEGOTIABLE):
+    - ONLY ADJUSTMENT movements allowed via this endpoint
+    - Stock IN: Created ONLY by Purchase Finalization
+    - Stock OUT: Created ONLY by Invoice Finalization
+    - audit_reference: MANDATORY for all manual adjustments
     
-    Allowed movement types:
-    - "Stock IN": Manual stock additions (returns, found items, corrections)
-    - "Adjustment": Inventory reconciliation adjustments (positive only)
-    
-    Prohibited:
-    - "Stock OUT": Must occur ONLY through invoice finalization to maintain:
-      * Complete audit trail (tied to invoice)
-      * Accurate accounting (revenue recorded)
-      * GST compliance (tax collected)
+    This endpoint is for inventory corrections/reconciliations ONLY.
+    All other stock movements must flow through their respective transactions.
     """
-    header = await db.inventory_headers.find_one({"id": movement_data['header_id']}, {"_id": 0})
-    if not header:
-        raise HTTPException(status_code=404, detail="Header not found")
+    # MODULE 7: Validate required fields
+    if 'header_id' not in movement_data or not movement_data['header_id']:
+        raise HTTPException(status_code=400, detail="header_id is required")
     
-    # CRITICAL VALIDATION: Prevent manual Stock OUT movements
-    movement_type = movement_data.get('movement_type', '').strip()
-    qty_delta = movement_data.get('qty_delta', 0)
-    weight_delta = movement_data.get('weight_delta', 0)
+    if 'weight' not in movement_data:
+        raise HTTPException(status_code=400, detail="weight is required (in grams, 3 decimal precision)")
     
-    # Get optional confirmation_reason for audit trail
-    confirmation_reason = movement_data.get('confirmation_reason', '').strip() if movement_data.get('confirmation_reason') else None
-    
-    # Block Stock OUT movement type entirely
-    if movement_type == "Stock OUT":
-        raise HTTPException(
-            status_code=403,
-            detail="Manual 'Stock OUT' movements are prohibited. Stock can only be reduced through Invoice Finalization (POST /api/invoices/{id}/finalize). This restriction ensures audit trail integrity, accounting accuracy, and GST compliance."
-        )
-    
-    # Block negative deltas for Stock IN and Adjustment (attempt to bypass via negative values)
-    if movement_type in ["Stock IN", "Adjustment"]:
-        if qty_delta < 0 or weight_delta < 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid {movement_type} movement: qty_delta and weight_delta must be positive (>= 0). To reduce stock, use Invoice Finalization instead."
-            )
-    
-    # Validate movement_type is one of the allowed types
-    allowed_types = ["Stock IN", "Adjustment"]
-    if movement_type not in allowed_types:
+    if 'audit_reference' not in movement_data or not movement_data.get('audit_reference', '').strip():
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid movement_type '{movement_type}'. Allowed types: {', '.join(allowed_types)}. Note: 'Stock OUT' is only created automatically through Invoice Finalization."
+            detail="audit_reference is REQUIRED for manual adjustments. Must provide reason for stock adjustment."
         )
     
+    # Get header
+    header = await db.inventory_headers.find_one({"id": movement_data['header_id'], "is_deleted": False}, {"_id": 0})
+    if not header:
+        raise HTTPException(status_code=404, detail="Inventory header not found")
+    
+    # MODULE 7: Parse and validate weight
+    try:
+        weight = Decimal(str(movement_data['weight'])).quantize(Decimal('0.001'))
+    except (ValueError, decimal.InvalidOperation):
+        raise HTTPException(status_code=400, detail="Invalid weight format. Must be a valid number with up to 3 decimal places.")
+    
+    if weight == 0:
+        raise HTTPException(status_code=400, detail="Weight cannot be zero for adjustments")
+    
+    # MODULE 7: Get purity
+    purity = movement_data.get('purity', 916)
+    if purity < 1 or purity > 999:
+        raise HTTPException(status_code=400, detail="Purity must be between 1 and 999")
+    
+    # MODULE 7: Determine movement type based on weight sign
+    # Positive weight = Adding to inventory
+    # Negative weight = Removing from inventory (manual correction only)
+    if weight > 0:
+        movement_type = "IN"
+    else:
+        movement_type = "OUT"
+        # For manual OUT movements, verify current stock is sufficient
+        current_weight = header.get('current_weight', 0)
+        if current_weight + float(weight) < 0:  # weight is negative, so we're adding
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient stock for adjustment. Current: {current_weight}g, Adjustment: {weight}g"
+            )
+    
+    # MODULE 7: Create StockMovement with new structure
     movement = StockMovement(
-        movement_type=movement_type,
+        movement_type="ADJUSTMENT",  # MODULE 7: All manual movements are ADJUSTMENTS
+        source_type="MANUAL",  # MODULE 7: Manual source
+        source_id=None,  # No source transaction for manual adjustments
         header_id=movement_data['header_id'],
         header_name=header['name'],
-        description=movement_data['description'],
-        qty_delta=qty_delta,
-        weight_delta=weight_delta,
-        purity=movement_data['purity'],
+        description=movement_data.get('description', 'Manual inventory adjustment'),
+        weight=weight,  # MODULE 7: Decimal precision
+        purity=purity,
+        audit_reference=movement_data['audit_reference'].strip(),  # MODULE 7: REQUIRED
         notes=movement_data.get('notes'),
-        confirmation_reason=confirmation_reason,
-        created_by=current_user.id
+        created_by=current_user.id,
+        # Legacy fields for backward compatibility
+        qty_delta=1 if weight > 0 else -1,
+        weight_delta=float(weight)
+    )
+    
+    # Insert stock movement
+    await db.stock_movements.insert_one(movement.model_dump())
+    
+    # Update inventory header
+    new_weight = header.get('current_weight', 0) + float(weight)
+    new_qty = header.get('current_qty', 0) + (1 if weight > 0 else -1)
+    
+    await db.inventory_headers.update_one(
+        {"id": movement_data['header_id']},
+        {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        current_user.id,
+        current_user.full_name,
+        "inventory",
+        movement.id,
+        "manual_adjustment",
+        {
+            "movement_type": "ADJUSTMENT",
+            "source_type": "MANUAL",
+            "header_name": header['name'],
+            "weight": str(weight),
+            "audit_reference": movement.audit_reference
+        }
+    )
+    
+    return movement
     )
     
     # Insert stock movement for audit trail
