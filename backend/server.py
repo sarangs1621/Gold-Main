@@ -2366,9 +2366,8 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
     )
     
     return movement
-    )
-    
-    # Insert stock movement for audit trail
+
+@api_router.delete("/inventory/movements/{movement_id}")    # Insert stock movement for audit trail
     await db.stock_movements.insert_one(movement.model_dump())
     
     # Create audit log for manual inventory adjustment
