@@ -523,12 +523,14 @@ export default function PurchasesPage() {
   };
 
   const getStatusBadge = (status) => {
+    // MODULE 5: Updated status colors for payment lifecycle
     const statusColors = {
       'draft': 'bg-blue-100 text-blue-800',
       'Draft': 'bg-blue-100 text-blue-800',
       'Finalized (Unpaid)': 'bg-yellow-100 text-yellow-800',
       'Partially Paid': 'bg-orange-100 text-orange-800',
-      'Paid': 'bg-green-100 text-green-800'
+      'Fully Paid': 'bg-green-100 text-green-800',
+      'Paid': 'bg-green-100 text-green-800'  // Backward compatibility
     };
 
     const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
@@ -536,8 +538,11 @@ export default function PurchasesPage() {
     if (status === 'Draft' || status === 'draft') {
       return <Badge className={colorClass}><Edit className="w-3 h-3 mr-1 inline" />Draft</Badge>;
     }
-    if (status === 'Paid') {
-      return <Badge className={colorClass}><CheckCircle className="w-3 h-3 mr-1 inline" />Paid</Badge>;
+    if (status === 'Fully Paid' || status === 'Paid') {
+      return <Badge className={colorClass}><CheckCircle className="w-3 h-3 mr-1 inline" />{status}</Badge>;
+    }
+    if (status === 'Partially Paid') {
+      return <Badge className={colorClass}><DollarSign className="w-3 h-3 mr-1 inline" />{status}</Badge>;
     }
     return <Badge className={colorClass}>{status}</Badge>;
   };
