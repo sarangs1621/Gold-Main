@@ -11037,6 +11037,22 @@ async def create_return(
         # Convert to Decimal128 for storage (use mode='python' to preserve Decimal objects)
         return_dict = convert_return_to_decimal(return_obj.model_dump(mode='python'))
         
+        # Debug: Check for any remaining Decimal objects
+        import json
+        from decimal import Decimal
+        def find_decimals(obj, path=""):
+            """Recursively find all Decimal objects"""
+            if isinstance(obj, Decimal):
+                print(f"Found Decimal at {path}: {obj}")
+            elif isinstance(obj, dict):
+                for k, v in obj.items():
+                    find_decimals(v, f"{path}.{k}" if path else k)
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    find_decimals(v, f"{path}[{i}]")
+        
+        find_decimals(return_dict)
+        
         # Insert draft return
         await db.returns.insert_one(return_dict)
         
