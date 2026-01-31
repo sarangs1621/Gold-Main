@@ -2370,12 +2370,11 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
 @api_router.delete("/inventory/movements/{movement_id}")
 async def delete_stock_movement(movement_id: str, current_user: User = Depends(require_permission('inventory.adjust'))):
     """
-    Delete a stock movement and reverse its effect on inventory.
+    MODULE 7: Delete a manual stock movement (ADJUSTMENT only).
     
-    CRITICAL RESTRICTIONS - Production ERP Compliance:
-    - CANNOT delete movements linked to invoices or purchases (reference_type set)
-    - CANNOT delete Stock OUT movements (these are created only by invoice finalization)
-    - CAN ONLY delete manual Stock IN or Adjustment movements
+    🚫 ABSOLUTE RULES (NON-NEGOTIABLE):
+    - CANNOT delete movements with source_type=SALE or PURCHASE
+    - CAN ONLY delete movements with source_type=MANUAL
     - This ensures audit trail integrity and prevents financial record corruption
     
     WARNING: This should only be used for corrections of manual entry errors.
@@ -2385,35 +2384,57 @@ async def delete_stock_movement(movement_id: str, current_user: User = Depends(r
     if not movement:
         raise HTTPException(status_code=404, detail="Stock movement not found")
     
-    # CRITICAL VALIDATION 1: Check if linked to invoice or purchase
-    if movement.get('reference_type') in ['invoice', 'purchase']:
+    # MODULE 7: Check source_type (new field takes precedence over legacy reference_type)
+    source_type = movement.get('source_type') or (
+        'SALE' if movement.get('reference_type') == 'invoice' else
+        'PURCHASE' if movement.get('reference_type') == 'purchase' else
+        'MANUAL'
+    )
+    
+    # CRITICAL VALIDATION: Only MANUAL movements can be deleted
+    if source_type in ['SALE', 'PURCHASE']:
         raise HTTPException(
             status_code=403,
-            detail=f"Cannot delete stock movement linked to {movement.get('reference_type')}. This movement is part of an official transaction and must be preserved for audit trail, accounting accuracy, and GST compliance."
+            detail=f"Cannot delete stock movement from {source_type}. Movements from sales and purchases are part of official transactions and must be preserved for audit trail, accounting accuracy, and GST compliance."
         )
     
-    # CRITICAL VALIDATION 2: Prevent deletion of Stock OUT movements
-    # Stock OUT should NEVER be created manually, but if somehow exists without reference_type, block deletion
-    if movement.get('movement_type') == "Stock OUT":
+    # MODULE 7: Also check legacy movement_type for old records
+    movement_type = movement.get('movement_type', '')
+    if movement_type in ["Stock OUT", "OUT"] and source_type != 'MANUAL':
         raise HTTPException(
             status_code=403,
-            detail="Cannot delete 'Stock OUT' movement. Stock OUT movements represent sales/reductions and must be preserved for audit trail. If this movement was created in error, contact system administrator."
+            detail="Cannot delete OUT movement that is not a manual adjustment. Contact system administrator if needed."
         )
     
     # Get the header to reverse the stock changes
+    if not movement.get('header_id'):
+        raise HTTPException(status_code=400, detail="Movement has no header_id, cannot reverse stock changes")
+    
     header = await db.inventory_headers.find_one({"id": movement['header_id']}, {"_id": 0})
     if not header:
         raise HTTPException(status_code=404, detail="Inventory header not found")
     
+    # MODULE 7: Get weight from new or legacy field
+    weight_to_reverse = movement.get('weight')
+    if weight_to_reverse is not None:
+        # New field exists - use Decimal
+        if isinstance(weight_to_reverse, Decimal128):
+            weight_to_reverse = float(weight_to_reverse.to_decimal())
+        else:
+            weight_to_reverse = float(weight_to_reverse)
+    else:
+        # Fall back to legacy field
+        weight_to_reverse = movement.get('weight_delta', 0)
+    
     # Calculate reversed values
-    new_qty = header.get('current_qty', 0) - movement['qty_delta']
-    new_weight = header.get('current_weight', 0) - movement['weight_delta']
+    new_weight = header.get('current_weight', 0) - weight_to_reverse
+    new_qty = header.get('current_qty', 0) - movement.get('qty_delta', 0)
     
     # Validate reversal won't make stock negative
     if new_qty < 0 or new_weight < 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete movement: would result in negative stock. Current: {header.get('current_qty', 0)} qty, {header.get('current_weight', 0)}g. Movement: {movement['qty_delta']} qty, {movement['weight_delta']}g"
+            detail=f"Cannot delete movement: would result in negative stock. Current: {header.get('current_qty', 0)} qty, {header.get('current_weight', 0)}g"
         )
     
     # Soft delete the movement
@@ -2436,9 +2457,9 @@ async def delete_stock_movement(movement_id: str, current_user: User = Depends(r
         movement_id,
         "delete",
         changes={
+            "source_type": source_type,
             "movement_type": movement.get('movement_type'),
-            "qty_delta": movement.get('qty_delta'),
-            "weight_delta": movement.get('weight_delta'),
+            "weight": str(weight_to_reverse),
             "header_id": movement.get('header_id'),
             "header_name": movement.get('header_name')
         }
@@ -2447,8 +2468,7 @@ async def delete_stock_movement(movement_id: str, current_user: User = Depends(r
     return {
         "message": "Stock movement deleted successfully and inventory adjusted",
         "id": movement_id,
-        "reversed_qty": movement['qty_delta'],
-        "reversed_weight": movement['weight_delta']
+        "reversed_weight": weight_to_reverse
     }
 
 @api_router.get("/inventory/stock-totals")
