@@ -1010,6 +1010,11 @@ class Invoice(BaseModel):
     balance_due: float = 0
     notes: Optional[str] = None
     jobcard_id: Optional[str] = None
+    # MODULE 3: Advance Gold fields (optional)
+    gold_weight: Optional[float] = None  # Grams, 3 decimal precision
+    gold_purity: Optional[int] = None  # As entered (e.g., 916 for 22K)
+    gold_rate_per_gram: Optional[float] = None  # Rate per gram
+    gold_value: Optional[float] = None  # Calculated: gold_weight × gold_rate_per_gram
     created_by: str
     is_deleted: bool = False
 
