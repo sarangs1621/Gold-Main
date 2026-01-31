@@ -22,6 +22,8 @@ import SettingsPage from './pages/SettingsPage';
 import PurchasesPage from './pages/PurchasesPage';
 import WorkersPage from './pages/WorkersPage';
 import ReturnsPage from './pages/ReturnsPage';
+import FinanceDashboardPage from './pages/FinanceDashboardPage';
+import SystemValidationPage from './pages/SystemValidationPage';
 
 function App() {
   return (
