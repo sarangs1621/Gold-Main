@@ -45,7 +45,7 @@ def login():
     """Login and get access token"""
     try:
         response = requests.post(
-            f"{API_URL}/login",
+            f"{API_URL}/auth/login",
             json=TEST_USER,
             timeout=10
         )
