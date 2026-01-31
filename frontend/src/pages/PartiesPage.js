@@ -501,7 +501,7 @@ export default function PartiesPage() {
           <div className="flex gap-4">
             <div className="flex-1">
               <Input
-                placeholder="Search by name or phone..."
+                placeholder="Search by name, phone, or Customer ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
