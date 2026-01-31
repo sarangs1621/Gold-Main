@@ -751,6 +751,47 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
+              {/* MODULE 3: Advance Gold Details (if present) */}
+              {viewInvoice.gold_weight && viewInvoice.gold_weight > 0 && (
+                <div className="p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
+                  <h3 className="text-sm font-semibold text-yellow-900 mb-3 flex items-center gap-2">
+                    💰 Advance Gold Received
+                    <Badge className="bg-yellow-200 text-yellow-900">Reduces Invoice Amount</Badge>
+                  </h3>
+                  <div className="grid grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-yellow-700 font-medium">Weight:</p>
+                      <p className="font-mono text-yellow-900 font-semibold">
+                        {viewInvoice.gold_weight.toFixed(3)} grams
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-yellow-700 font-medium">Purity:</p>
+                      <p className="font-mono text-yellow-900 font-semibold">
+                        {viewInvoice.gold_purity || 916}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-yellow-700 font-medium">Rate/gram:</p>
+                      <p className="font-mono text-yellow-900 font-semibold">
+                        {viewInvoice.gold_rate_per_gram?.toFixed(2) || '0.00'} OMR
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-yellow-700 font-medium">Gold Value:</p>
+                      <p className="font-mono text-yellow-900 font-bold text-lg">
+                        {viewInvoice.gold_value?.toFixed(2) || '0.00'} OMR
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-yellow-200">
+                    <p className="text-xs text-yellow-700 italic">
+                      ⚠️ This gold amount has been deducted from the invoice total. Customer balance reflects adjusted amount.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Items Table */}
               <div>
                 <h3 className="text-lg font-semibold mb-3">Items</h3>
