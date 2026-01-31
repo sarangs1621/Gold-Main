@@ -530,33 +530,57 @@ def convert_return_to_decimal(return_data: dict) -> dict:
     """
     # Convert top-level fields
     if 'total_weight_grams' in return_data:
-        return_data['total_weight_grams'] = Decimal128(
-            Decimal(str(return_data['total_weight_grams'])).quantize(Decimal('0.001'))
-        )
+        val = return_data['total_weight_grams']
+        if isinstance(val, Decimal):
+            return_data['total_weight_grams'] = Decimal128(val.quantize(Decimal('0.001')))
+        else:
+            return_data['total_weight_grams'] = Decimal128(
+                Decimal(str(val)).quantize(Decimal('0.001'))
+            )
     if 'total_amount' in return_data:
-        return_data['total_amount'] = Decimal128(
-            Decimal(str(return_data['total_amount'])).quantize(Decimal('0.01'))
-        )
+        val = return_data['total_amount']
+        if isinstance(val, Decimal):
+            return_data['total_amount'] = Decimal128(val.quantize(Decimal('0.01')))
+        else:
+            return_data['total_amount'] = Decimal128(
+                Decimal(str(val)).quantize(Decimal('0.01'))
+            )
     if 'refund_money_amount' in return_data:
-        return_data['refund_money_amount'] = Decimal128(
-            Decimal(str(return_data['refund_money_amount'])).quantize(Decimal('0.01'))
-        )
+        val = return_data['refund_money_amount']
+        if isinstance(val, Decimal):
+            return_data['refund_money_amount'] = Decimal128(val.quantize(Decimal('0.01')))
+        else:
+            return_data['refund_money_amount'] = Decimal128(
+                Decimal(str(val)).quantize(Decimal('0.01'))
+            )
     if 'refund_gold_grams' in return_data:
-        return_data['refund_gold_grams'] = Decimal128(
-            Decimal(str(return_data['refund_gold_grams'])).quantize(Decimal('0.001'))
-        )
+        val = return_data['refund_gold_grams']
+        if isinstance(val, Decimal):
+            return_data['refund_gold_grams'] = Decimal128(val.quantize(Decimal('0.001')))
+        else:
+            return_data['refund_gold_grams'] = Decimal128(
+                Decimal(str(val)).quantize(Decimal('0.001'))
+            )
     
     # Convert items
     if 'items' in return_data:
         for item in return_data['items']:
             if 'weight_grams' in item:
-                item['weight_grams'] = Decimal128(
-                    Decimal(str(item['weight_grams'])).quantize(Decimal('0.001'))
-                )
+                val = item['weight_grams']
+                if isinstance(val, Decimal):
+                    item['weight_grams'] = Decimal128(val.quantize(Decimal('0.001')))
+                else:
+                    item['weight_grams'] = Decimal128(
+                        Decimal(str(val)).quantize(Decimal('0.001'))
+                    )
             if 'amount' in item:
-                item['amount'] = Decimal128(
-                    Decimal(str(item['amount'])).quantize(Decimal('0.01'))
-                )
+                val = item['amount']
+                if isinstance(val, Decimal):
+                    item['amount'] = Decimal128(val.quantize(Decimal('0.01')))
+                else:
+                    item['amount'] = Decimal128(
+                        Decimal(str(val)).quantize(Decimal('0.01'))
+                    )
     
     return return_data
 
