@@ -760,6 +760,136 @@ def create_pagination_response(items: list, total_count: int, page: int, page_si
         }
     }
 
+# ============================================================================
+# MODULE 7: INVENTORY CALCULATION FUNCTIONS (SSOT = StockMovements)
+# ============================================================================
+
+async def calculate_stock_from_movements(
+    header_id: Optional[str] = None,
+    header_name: Optional[str] = None,
+    as_of: Optional[datetime] = None
+) -> Dict[str, Any]:
+    """
+    MODULE 7: Calculate current stock from StockMovements (Single Source of Truth)
+    
+    Formula: SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+    
+    Args:
+        header_id: Optional inventory header ID to filter by
+        header_name: Optional inventory header name to filter by
+        as_of: Optional timestamp for historical stock calculation
+    
+    Returns:
+        Dict with total_weight, total_qty, and movements breakdown
+    """
+    query = {"is_deleted": False}
+    
+    # Filter by header
+    if header_id:
+        query["header_id"] = header_id
+    elif header_name:
+        query["header_name"] = header_name
+    
+    # Filter by time
+    if as_of:
+        query["created_at"] = {"$lte": as_of}
+    
+    # Get all movements
+    movements = await db.stock_movements.find(query, {"_id": 0}).to_list(None)
+    
+    # Calculate stock using MODULE 7 formula
+    total_weight = Decimal('0.000')
+    total_qty = 0
+    in_weight = Decimal('0.000')
+    out_weight = Decimal('0.000')
+    adjustment_weight = Decimal('0.000')
+    
+    for movement in movements:
+        weight = movement.get('weight', 0)
+        if isinstance(weight, Decimal128):
+            weight = Decimal(str(weight.to_decimal()))
+        else:
+            weight = Decimal(str(weight))
+        
+        movement_type = movement.get('movement_type', '')
+        
+        if movement_type == 'IN':
+            in_weight += weight
+            total_weight += weight
+            total_qty += 1
+        elif movement_type == 'OUT':
+            out_weight += abs(weight)  # Store as positive for reporting
+            total_weight -= abs(weight)  # Subtract from total
+            total_qty -= 1
+        elif movement_type == 'ADJUSTMENT':
+            adjustment_weight += weight  # Can be positive or negative
+            total_weight += weight
+            if weight > 0:
+                total_qty += 1
+            else:
+                total_qty -= 1
+    
+    return {
+        "total_weight": float(total_weight),
+        "total_qty": total_qty,
+        "in_weight": float(in_weight),
+        "out_weight": float(out_weight),
+        "adjustment_weight": float(adjustment_weight),
+        "as_of": as_of.isoformat() if as_of else None
+    }
+
+async def validate_stock_availability(
+    header_id: str,
+    required_weight: float,
+    required_qty: int = 1
+) -> tuple[bool, str, float, int]:
+    """
+    MODULE 7: Validate if sufficient stock is available for an operation.
+    Queries StockMovements as Single Source of Truth.
+    
+    Args:
+        header_id: Inventory header ID
+        required_weight: Weight required in grams
+        required_qty: Quantity required
+    
+    Returns:
+        Tuple of (is_valid, error_message, available_weight, available_qty)
+    """
+    stock = await calculate_stock_from_movements(header_id=header_id)
+    available_weight = stock['total_weight']
+    available_qty = stock['total_qty']
+    
+    if available_weight < required_weight or available_qty < required_qty:
+        header = await db.inventory_headers.find_one({"id": header_id}, {"_id": 0})
+        header_name = header.get('name', 'Unknown') if header else 'Unknown'
+        return (
+            False,
+            f"{header_name}: Need {required_qty} qty/{required_weight}g, but only {available_qty} qty/{round(available_weight, 3)}g available",
+            available_weight,
+            available_qty
+        )
+    
+    return (True, "", available_weight, available_qty)
+
+async def check_finalize_idempotency(source_type: str, source_id: str) -> bool:
+    """
+    MODULE 7: Check if a finalize operation has already created stock movements.
+    Prevents duplicate movements from repeated finalize calls.
+    
+    Args:
+        source_type: SALE, PURCHASE, etc.
+        source_id: ID of the source transaction
+    
+    Returns:
+        True if movements already exist (already finalized), False otherwise
+    """
+    existing_movement = await db.stock_movements.find_one({
+        "source_type": source_type,
+        "source_id": source_id,
+        "is_deleted": False
+    })
+    return existing_movement is not None
+
 class UserRole(BaseModel):
     role: str
     permissions: List[str] = []
