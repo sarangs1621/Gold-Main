@@ -103,6 +103,23 @@ export default function PartiesPage() {
     return '';
   };
   
+  // Validation function for customer_id
+  const validateCustomerId = (customerId) => {
+    if (!customerId || !customerId.trim()) {
+      return ''; // Customer ID is optional
+    }
+    
+    const trimmedId = customerId.trim();
+    
+    // Must contain only digits (0-9), allow leading zeros
+    const customerIdPattern = /^[0-9]+$/;
+    if (!customerIdPattern.test(trimmedId)) {
+      return 'Customer ID must contain only digits (0-9)';
+    }
+    
+    return '';
+  };
+  
   // Handle name change with validation
   const handleNameChange = (e) => {
     const value = e.target.value;
