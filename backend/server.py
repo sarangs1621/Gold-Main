@@ -2599,21 +2599,52 @@ async def delete_stock_movement(movement_id: str, current_user: User = Depends(r
     }
 
 @api_router.get("/inventory/stock-totals")
-async def get_stock_totals(current_user: User = Depends(require_permission('inventory.view'))):
+async def get_stock_totals(
+    as_of: Optional[str] = None,
+    current_user: User = Depends(require_permission('inventory.view'))
+):
+    """
+    MODULE 7: Get current stock totals calculated from StockMovements (Single Source of Truth)
+    
+    Query Parameters:
+        as_of: Optional ISO timestamp for historical stock calculation (e.g., "2024-01-15T10:30:00Z")
+    
+    Returns stock calculated using: SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+    """
     if not user_has_permission(current_user, 'inventory.view'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to view inventory")
     
-    # Return current stock directly from inventory headers
+    # Parse as_of timestamp if provided
+    as_of_dt = None
+    if as_of:
+        try:
+            as_of_dt = datetime.fromisoformat(as_of.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid as_of timestamp format. Use ISO 8601 format (e.g., 2024-01-15T10:30:00Z)")
+    
+    # Get all headers
     headers = await db.inventory_headers.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
-    return [
-        {
-            "header_id": h['id'], 
-            "header_name": h['name'], 
-            "total_qty": h.get('current_qty', 0), 
-            "total_weight": h.get('current_weight', 0)
-        } 
-        for h in headers
-    ]
+    
+    stock_totals = []
+    for header in headers:
+        # MODULE 7: Calculate stock from StockMovements
+        stock = await calculate_stock_from_movements(
+            header_id=header['id'],
+            as_of=as_of_dt
+        )
+        
+        stock_totals.append({
+            "header_id": header['id'],
+            "header_name": header['name'],
+            "total_qty": stock['total_qty'],
+            "total_weight": stock['total_weight'],
+            "in_weight": stock['in_weight'],
+            "out_weight": stock['out_weight'],
+            "adjustment_weight": stock['adjustment_weight'],
+            "as_of": stock['as_of']
+        })
+    
+    return stock_totals
 
 @api_router.get("/inventory/reconciliation")
 async def reconcile_inventory(current_user: User = Depends(require_permission('inventory.adjust'))):
