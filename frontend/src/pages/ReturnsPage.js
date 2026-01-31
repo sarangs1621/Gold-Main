@@ -453,8 +453,12 @@ const ReturnsPage = () => {
     setSuccess('');
     
     try {
-      await API.post(`/api/returns/${selectedReturn.id}/finalize`);
-      setSuccess('Return finalized successfully');
+      const response = await API.post(`/api/returns/${selectedReturn.id}/finalize`);
+      // MODULE 6: Show inventory action required notice
+      const message = response.data?.details?.inventory_action_required 
+        ? 'Return finalized successfully. ⚠️ Manual inventory adjustment is required.'
+        : 'Return finalized successfully';
+      setSuccess(message);
       setShowFinalizeDialog(false);
       setSelectedReturn(null);
       setFinalizeImpact(null);
