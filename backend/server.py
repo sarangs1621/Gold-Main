@@ -4183,37 +4183,219 @@ async def get_purchase_impact(purchase_id: str, current_user: User = Depends(req
 @api_router.post("/purchases/{purchase_id}/finalize")
 async def finalize_purchase(purchase_id: str, current_user: User = Depends(require_permission('purchases.finalize'))):
     """
-    ⚠️ DEPRECATED ENDPOINT ⚠️
+    MODULE 4: Finalize a DRAFT purchase and create all accounting entries.
     
-    This endpoint is no longer needed as purchases are auto-finalized on creation.
-    All purchases are immediately committed with proper status:
-    - "Finalized (Unpaid)" if paid_amount == 0
-    - "Partially Paid" if 0 < paid_amount < total
-    - "Paid" if paid_amount == total
+    FINALIZATION CREATES:
+    1. Stock IN movements (for each item at 916 purity)
+    2. Vendor payable transaction (balance_due_money)
+    3. Gold ledger entries (if advance/exchange gold)
     
-    Kept for backward compatibility only.
+    FINALIZATION LOCKS:
+    - Items array (immutable)
+    - Conversion factor (immutable)
+    - Vendor information (immutable)
+    - Valuation amounts (immutable)
+    
+    AFTER FINALIZATION:
+    - Purchase cannot be edited
+    - Payments can be added (Module 5)
+    - Status updates: "Finalized (Unpaid)" → "Partially Paid" → "Paid"
     """
     if not user_has_permission(current_user, 'purchases.finalize'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to finalize purchases")
     
     # Get purchase
-    purchase = await db.purchases.find_one({"id": purchase_id, "is_deleted": False})
-    if not purchase:
+    existing = await db.purchases.find_one({"id": purchase_id, "is_deleted": False})
+    if not existing:
         raise HTTPException(status_code=404, detail="Purchase not found")
     
-    # Check status - all purchases are now auto-finalized
-    purchase_status = purchase.get("status", "")
-    if purchase_status in ["Finalized (Unpaid)", "Partially Paid", "Paid"]:
+    purchase = Purchase(**existing)
+    
+    # Check if already finalized
+    if purchase.finalized_at is not None:
         raise HTTPException(
-            status_code=400, 
-            detail=f"Purchase is already finalized with status: {purchase_status}. All purchases are auto-finalized on creation."
+            status_code=400,
+            detail=f"Purchase is already finalized on {purchase.finalized_at.isoformat()}. Cannot finalize twice."
         )
     
-    # Should never reach here in normal operation
-    raise HTTPException(
-        status_code=400,
-        detail="This endpoint is deprecated. All purchases are auto-finalized on creation."
+    # Validate has items
+    if not purchase.items or len(purchase.items) == 0:
+        raise HTTPException(status_code=400, detail="Cannot finalize purchase without items")
+    
+    # Get vendor name for transactions
+    vendor_name = None
+    if purchase.vendor_type == "saved" and purchase.vendor_party_id:
+        vendor = await db.parties.find_one({"id": purchase.vendor_party_id, "is_deleted": False})
+        if vendor:
+            vendor_name = vendor.get("name")
+    elif purchase.vendor_type == "walk_in":
+        vendor_name = purchase.walk_in_name
+    
+    if not vendor_name:
+        vendor_name = "Unknown Vendor"
+    
+    # Calculate totals
+    total_weight = Decimal('0')
+    for item in purchase.items:
+        total_weight += Decimal(str(item.weight_grams))
+    
+    finalize_time = datetime.now(timezone.utc)
+    
+    # ========== OPERATION 1: Create Stock IN movements for each item ==========
+    purity = 916  # Always 916
+    header_name = f"Gold {purity // 41.6:.0f}K"  # 916 = 22K
+    
+    header = await db.inventory_headers.find_one({"name": header_name, "is_deleted": False})
+    if not header:
+        # Create new inventory header
+        header = InventoryHeader(
+            name=header_name,
+            current_qty=0,
+            current_weight=0,
+            created_by=current_user.username
+        )
+        await db.inventory_headers.insert_one(header.model_dump())
+    
+    # Create Stock IN movement for each item
+    for item in purchase.items:
+        movement = StockMovement(
+            date=purchase.date,
+            movement_type="Stock IN",
+            header_id=header.get("id") if isinstance(header, dict) else header.id,
+            header_name=header_name,
+            description=f"Purchase from {vendor_name}: {item.description}",
+            qty_delta=1,
+            weight_delta=item.weight_grams,
+            purity=purity,
+            reference_type="purchase",
+            reference_id=purchase_id,
+            created_by=current_user.username,
+            notes=f"Entered purity: {item.entered_purity}, Valuation purity: {purity}, Conversion factor: {purchase.conversion_factor}"
+        )
+        await db.stock_movements.insert_one(movement.model_dump())
+    
+    # Update inventory header with total weight
+    header_id = header.get("id") if isinstance(header, dict) else header.id
+    await db.inventory_headers.update_one(
+        {"id": header_id},
+        {"$inc": {
+            "current_qty": len(purchase.items),
+            "current_weight": float(total_weight)
+        }}
     )
+    
+    # ========== OPERATION 2: Create GoldLedgerEntry OUT if advance_in_gold_grams > 0 ==========
+    advance_gold = purchase.advance_in_gold_grams
+    if advance_gold and advance_gold > 0:
+        advance_gold = round(advance_gold, 3)
+        
+        # For walk-in, party_id should be None
+        gold_party_id = purchase.vendor_party_id if purchase.vendor_type == "saved" else None
+        
+        advance_entry = GoldLedgerEntry(
+            party_id=gold_party_id,
+            date=purchase.date,
+            type="OUT",
+            weight_grams=advance_gold,
+            purity_entered=purchase.items[0].entered_purity if purchase.items else 916,
+            purpose="advance_gold",
+            reference_type="purchase",
+            reference_id=purchase_id,
+            notes=f"Advance gold settled in purchase: {purchase.description}",
+            created_by=current_user.username
+        )
+        await db.gold_ledger.insert_one(advance_entry.model_dump())
+    
+    # ========== OPERATION 3: Create GoldLedgerEntry IN if exchange_in_gold_grams > 0 ==========
+    exchange_gold = purchase.exchange_in_gold_grams
+    if exchange_gold and exchange_gold > 0:
+        exchange_gold = round(exchange_gold, 3)
+        
+        # For walk-in, party_id should be None
+        gold_party_id = purchase.vendor_party_id if purchase.vendor_type == "saved" else None
+        
+        exchange_entry = GoldLedgerEntry(
+            party_id=gold_party_id,
+            date=purchase.date,
+            type="IN",
+            weight_grams=exchange_gold,
+            purity_entered=purchase.items[0].entered_purity if purchase.items else 916,
+            purpose="exchange",
+            reference_type="purchase",
+            reference_id=purchase_id,
+            notes=f"Gold exchanged in purchase: {purchase.description}",
+            created_by=current_user.username
+        )
+        await db.gold_ledger.insert_one(exchange_entry.model_dump())
+    
+    # ========== OPERATION 4: Create vendor payable transaction for full amount ==========
+    # Create payable for the full amount_total (payments handled separately in Module 5)
+    current_year = datetime.now(timezone.utc).year
+    existing_txns = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{current_year}-"}})
+    payable_txn_number = f"TXN-{current_year}-{existing_txns + 1:04d}"
+    
+    purchases_account = await db.accounts.find_one({"name": "Purchases", "is_deleted": False})
+    if not purchases_account:
+        purchases_account = Account(
+            name="Purchases",
+            account_type="expense",
+            current_balance=0,
+            created_by=current_user.username
+        )
+        await db.accounts.insert_one(purchases_account.model_dump())
+    
+    payable_transaction = Transaction(
+        transaction_number=payable_txn_number,
+        date=purchase.date,
+        transaction_type="credit",
+        mode="Vendor Payable",
+        account_id=purchases_account.get("id") if isinstance(purchases_account, dict) else purchases_account.id,
+        account_name="Purchases",
+        party_id=purchase.vendor_party_id,
+        party_name=vendor_name,
+        amount=round(purchase.amount_total, 2),
+        category="Purchase",
+        reference_type="purchase",
+        reference_id=purchase_id,
+        notes=f"Vendor payable for purchase: {purchase.description} ({float(total_weight)}g, 22K valuation, CF: {purchase.conversion_factor})",
+        created_by=current_user.username
+    )
+    await db.transactions.insert_one(payable_transaction.model_dump())
+    
+    # ========== UPDATE PURCHASE: Set finalized status ==========
+    update_data = {
+        "status": "Finalized (Unpaid)",  # Initial status after finalization
+        "finalized_at": finalize_time,
+        "finalized_by": current_user.username,
+        "locked": False,  # Not locked yet - can still receive payments
+        "locked_at": None,
+        "locked_by": None
+    }
+    
+    await db.purchases.update_one(
+        {"id": purchase_id},
+        {"$set": update_data}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        user_id=current_user.id,
+        user_name=current_user.username,
+        module="purchases",
+        record_id=purchase_id,
+        action="finalize",
+        changes={
+            "finalized_at": finalize_time.isoformat(),
+            "stock_created": len(purchase.items),
+            "total_weight_grams": float(total_weight),
+            "vendor_payable_created": purchase.amount_total,
+            "status": "Finalized (Unpaid)"
+        }
+    )
+    
+    # Return updated purchase
+    updated = await db.purchases.find_one({"id": purchase_id})
+    return decimal_to_float(updated)
 
 @api_router.get("/jobcards")
 async def get_jobcards(
