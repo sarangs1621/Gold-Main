@@ -2700,17 +2700,22 @@ async def get_stock_by_header(
 @api_router.get("/inventory/reconciliation")
 async def reconcile_inventory(current_user: User = Depends(require_permission('inventory.adjust'))):
     """
-    MODULE 7: Inventory Reconciliation - Calculate stock from StockMovements.
+    MODULE 7: Inventory Reconciliation - Verify stock calculated from StockMovements.
     
-    ADMIN-ONLY endpoint to verify that inventory totals match StockMovements.
+    ADMIN-ONLY endpoint to audit inventory integrity by comparing:
+    - TRUE stock (calculated from StockMovements - Single Source of Truth)
+    - LEGACY stock (stored in inventory_headers - DEPRECATED)
     
     Calculation Rule (MODULE 7):
-    Current Stock = SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+    TRUE Stock = SUM(IN) - SUM(OUT) ± ADJUSTMENTS
     
     Returns:
-    - Calculated totals from StockMovements
-    - Current totals from InventoryHeaders
-    - Discrepancies (if any)
+    - Calculated totals from StockMovements (TRUE values)
+    - Legacy totals from InventoryHeaders (DEPRECATED - for audit only)
+    - Discrepancies (should all be 0 after MODULE 7 implementation)
+    
+    Note: After MODULE 7, discrepancies indicate legacy data that hasn't been updated.
+    The TRUE value is always the calculated_weight_movements.
     """
     if current_user.role != 'admin':
         raise HTTPException(
@@ -2722,37 +2727,63 @@ async def reconcile_inventory(current_user: User = Depends(require_permission('i
     headers = await db.inventory_headers.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
     
     reconciliation_results = []
+    total_discrepancy = 0.0
     
     for header in headers:
         header_id = header['id']
         header_name = header['name']
         
-        # Get all movements for this header
-        movements = await db.stock_movements.find(
-            {"header_id": header_id, "is_deleted": False},
-            {"_id": 0}
-        ).to_list(None)
+        # MODULE 7: Calculate TRUE stock from StockMovements
+        stock = await calculate_stock_from_movements(header_id=header_id)
+        calculated_weight = Decimal(str(stock['total_weight']))
         
-        # MODULE 7: Calculate from movements: SUM(IN) - SUM(OUT) ± ADJUSTMENTS
-        calculated_weight = Decimal('0.000')
+        # Get LEGACY values from header (DEPRECATED)
+        legacy_weight = Decimal(str(header.get('current_weight', 0)))
+        legacy_qty = header.get('current_qty', 0)
         
-        for movement in movements:
-            # Get weight from new or legacy field
-            weight = movement.get('weight')
-            if weight is not None:
-                # New field - handle Decimal128
-                if isinstance(weight, Decimal128):
-                    weight = weight.to_decimal()
-                else:
-                    weight = Decimal(str(weight))
-            else:
-                # Legacy field
-                weight = Decimal(str(movement.get('weight_delta', 0)))
-            
-            # Get movement type (new or legacy)
-            movement_type = movement.get('movement_type', '')
-            
-            # MODULE 7: Apply weight based on movement type
+        # Calculate discrepancy
+        discrepancy = calculated_weight - legacy_weight
+        total_discrepancy += abs(float(discrepancy))
+        
+        # Count movements for this header
+        movement_count = await db.stock_movements.count_documents({
+            "header_id": header_id,
+            "is_deleted": False
+        })
+        
+        reconciliation_results.append({
+            "header_id": header_id,
+            "header_name": header_name,
+            "true_stock_weight": float(calculated_weight),  # MODULE 7: Single Source of Truth
+            "true_stock_qty": stock['total_qty'],
+            "legacy_weight": float(legacy_weight),  # DEPRECATED field
+            "legacy_qty": legacy_qty,  # DEPRECATED field
+            "discrepancy_weight": float(discrepancy),
+            "matches": abs(discrepancy) < 0.001,  # Allow 0.001g tolerance for rounding
+            "movement_count": movement_count,
+            "breakdown": {
+                "in_weight": stock['in_weight'],
+                "out_weight": stock['out_weight'],
+                "adjustment_weight": stock['adjustment_weight']
+            }
+        })
+    
+    # Summary statistics
+    total_headers = len(headers)
+    matching_headers = sum(1 for r in reconciliation_results if r['matches'])
+    mismatched_headers = total_headers - matching_headers
+    
+    return {
+        "summary": {
+            "total_headers": total_headers,
+            "matching_headers": matching_headers,
+            "mismatched_headers": mismatched_headers,
+            "total_absolute_discrepancy": round(total_discrepancy, 3),
+            "all_match": mismatched_headers == 0,
+            "note": "After MODULE 7, 'true_stock_weight' is the authoritative value. Legacy fields are for audit only."
+        },
+        "details": reconciliation_results
+    }
             if movement_type in ['IN', 'Stock IN']:
                 calculated_weight += abs(weight)
             elif movement_type in ['OUT', 'Stock OUT']:
