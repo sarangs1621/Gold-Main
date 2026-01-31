@@ -774,6 +774,20 @@ export default function PurchasesPage() {
                                 <CheckCircle className="w-4 h-4" />
                               </Button>
                             )}
+
+                            {/* MODULE 5: Add Payment button - only for Finalized & Not Locked purchases */}
+                            {purchase.finalized_at && !purchase.locked && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                                onClick={() => handleOpenPaymentDialog(purchase)}
+                                title="Add Payment"
+                                data-testid={`add-payment-${purchase.id}`}
+                              >
+                                <DollarSign className="w-4 h-4" />
+                              </Button>
+                            )}
                             
                             {/* Delete button - only for draft purchases */}
                             {(purchase.status === 'Draft' || purchase.status === 'draft') && !purchase.finalized_at && (
