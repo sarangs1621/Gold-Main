@@ -1171,17 +1171,17 @@ class Purchase(BaseModel):
     
     amount_total: float  # Total amount = sum of all item amounts - 2 decimal precision
     
-    # MODULE 4: Payment and Gold Settlement fields
+    # MODULE 5: Payment and Gold Settlement fields
     paid_amount_money: float = 0.0  # Amount paid during purchase (2 decimal precision)
     balance_due_money: float = 0.0  # Auto-calculated: amount_total - paid_amount_money (2 decimal precision)
     payment_mode: Optional[str] = None  # Cash | Bank Transfer | Card | UPI | Online | Cheque
     account_id: Optional[str] = None  # Account from which payment was made
     advance_in_gold_grams: Optional[float] = None  # Gold we gave vendor previously, now used as credit (3 decimals)
     exchange_in_gold_grams: Optional[float] = None  # Gold exchanged from vendor during purchase (3 decimals)
-    status: str  # MUST be calculated: "Finalized (Unpaid)" | "Partially Paid" | "Paid" | "Draft"
+    status: str  # MODULE 5: "Draft" | "Partially Paid" | "Fully Paid" (calculated from paid_amount vs amount_total)
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[str] = None
-    locked: bool = False  # Finalized purchases are locked
+    locked: bool = False  # MODULE 5: Locked ONLY when balance_due_money == 0 (Finalized ≠ Locked)
     locked_at: Optional[datetime] = None
     locked_by: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
