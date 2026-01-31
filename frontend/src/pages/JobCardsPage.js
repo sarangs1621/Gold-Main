@@ -451,6 +451,20 @@ export default function JobCardsPage() {
         payload.walk_in_phone = convertData.walk_in_phone;
       }
 
+      // MODULE 3: Include gold fields if provided
+      if (convertData.show_gold_section && convertData.gold_weight && convertData.gold_rate_per_gram) {
+        const goldWeight = parseFloat(convertData.gold_weight);
+        const goldRate = parseFloat(convertData.gold_rate_per_gram);
+        const goldPurity = parseInt(convertData.gold_purity) || 916;
+        
+        if (goldWeight > 0 && goldRate > 0) {
+          payload.gold_weight = parseFloat(goldWeight.toFixed(3));
+          payload.gold_purity = goldPurity;
+          payload.gold_rate_per_gram = parseFloat(goldRate.toFixed(2));
+          payload.gold_value = parseFloat((goldWeight * goldRate).toFixed(2));
+        }
+      }
+
       const response = await API.post(
         `/api/jobcards/${convertingJobCard.id}/convert-to-invoice`, 
         payload
