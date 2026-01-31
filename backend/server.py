@@ -6464,23 +6464,30 @@ async def add_payment_to_invoice(
                             
                             # MODULE 7: Create stock movement ONLY
                             # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
-                            movement = StockMovement(
-                                movement_type="OUT",  # MODULE 7: Simplified taxonomy
-                                source_type="SALE",  # MODULE 7: Source tracking
-                                source_id=invoice.id,
-                                header_id=header['id'],
-                                header_name=header['name'],
-                                description=f"Invoice {invoice.invoice_number} - Auto-finalized (Gold Exchange Payment)",
-                                weight=Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001')),
-                                purity=item.purity,
-                                created_by=current_user.id,
+                            weight_decimal = Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001'))
+                            movement_dict = {
+                                "id": str(uuid.uuid4()),
+                                "date": datetime.now(timezone.utc),
+                                "created_at": datetime.now(timezone.utc),
+                                "movement_type": "OUT",  # MODULE 7: Simplified taxonomy
+                                "source_type": "SALE",  # MODULE 7: Source tracking
+                                "source_id": invoice.id,
+                                "header_id": header['id'],
+                                "header_name": header['name'],
+                                "description": f"Invoice {invoice.invoice_number} - Auto-finalized (Gold Exchange Payment)",
+                                "weight": Decimal128(weight_decimal),  # MODULE 7: Convert to Decimal128 for MongoDB
+                                "purity": item.purity,
+                                "created_by": current_user.id,
+                                "notes": None,
+                                "audit_reference": None,
                                 # Legacy fields for backward compatibility
-                                qty_delta=-item.qty,
-                                weight_delta=-(item.weight * item.qty),
-                                reference_type="invoice",
-                                reference_id=invoice.id
-                            )
-                            await db.stock_movements.insert_one(movement.model_dump())
+                                "qty_delta": -item.qty,
+                                "weight_delta": -(item.weight * item.qty),
+                                "reference_type": "invoice",
+                                "reference_id": invoice.id,
+                                "is_deleted": False
+                            }
+                            await db.stock_movements.insert_one(movement_dict)
             
             # If stock errors occurred, rollback finalization but keep payment
             if gold_stock_errors:
