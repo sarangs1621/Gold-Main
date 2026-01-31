@@ -1044,6 +1044,20 @@ export default function InvoicesPage() {
                       <span>Grand Total:</span>
                       <span className="font-mono text-lg">{(viewInvoice.grand_total || 0).toFixed(3)} OMR</span>
                     </div>
+                    {/* MODULE 3: Show Adjusted Amount Payable if gold present */}
+                    {viewInvoice.gold_weight && viewInvoice.gold_weight > 0 && (
+                      <div className="flex justify-between text-base font-bold border-t-2 border-blue-500 pt-2 mt-2 bg-blue-50 -mx-4 px-4 py-2">
+                        <span className="text-blue-900">Amount Payable:</span>
+                        <span className="font-mono text-xl text-blue-900">
+                          {((viewInvoice.grand_total || 0) - (viewInvoice.gold_value || 0)).toFixed(3)} OMR
+                        </span>
+                      </div>
+                    )}
+                    {viewInvoice.gold_weight && viewInvoice.gold_weight > 0 && ((viewInvoice.grand_total || 0) - (viewInvoice.gold_value || 0)) < 0 && (
+                      <div className="text-xs text-red-600 font-semibold -mx-4 px-4 pb-2 bg-red-50 border-b border-red-200">
+                        ⚠️ Shop owes customer: {Math.abs((viewInvoice.grand_total || 0) - (viewInvoice.gold_value || 0)).toFixed(3)} OMR
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
