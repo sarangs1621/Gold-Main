@@ -1244,6 +1244,7 @@ export default function JobCardsPage() {
                       <SelectContent>
                         <SelectItem value="flat">Flat Rate</SelectItem>
                         <SelectItem value="per_gram">Per Gram</SelectItem>
+                        <SelectItem value="per_inch">Per Inch</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
