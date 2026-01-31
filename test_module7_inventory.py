@@ -71,16 +71,28 @@ def test_1_draft_sale_no_stock_change():
                 "description": "Test Item",
                 "qty": 1,
                 "weight": 10.0,
+                "gross_weight": 10.0,
+                "stone_weight": 0.0,
+                "net_gold_weight": 10.0,
                 "purity": 916,
-                "rate": 100,
-                "amount": 1000,
+                "metal_rate": 100,
+                "gold_value": 1000,
+                "making_charge_type": "flat",
+                "making_value": 0,
+                "stone_charges": 0,
+                "wastage_charges": 0,
+                "item_discount": 0,
+                "vat_percent": 5.0,
+                "vat_amount": 50,
+                "line_total": 1050,
                 "category": "Gold 22K"
             }
         ],
         "subtotal": 1000,
-        "grand_total": 1000,
+        "vat_total": 50,
+        "grand_total": 1050,
         "paid_amount": 0,
-        "balance_due": 1000
+        "balance_due": 1050
     }
     
     response = requests.post(f"{BASE_URL}/invoices", headers=get_headers(), json=invoice_data)
