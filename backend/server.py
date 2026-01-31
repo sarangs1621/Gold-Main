@@ -2648,12 +2648,13 @@ async def get_parties(
     if party_type and party_type != 'all':
         query['party_type'] = party_type
     
-    # Server-side search filter (name or phone)
+    # Server-side search filter (name, phone, or customer_id)
     if search and search.strip():
         search_pattern = {"$regex": search.strip(), "$options": "i"}  # case-insensitive
         query['$or'] = [
             {"name": search_pattern},
-            {"phone": search_pattern}
+            {"phone": search_pattern},
+            {"customer_id": search_pattern}  # Added customer_id to search
         ]
     
     # Date range filter (filter by created date)
