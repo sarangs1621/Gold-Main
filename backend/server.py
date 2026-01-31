@@ -3743,21 +3743,23 @@ async def add_payment_to_purchase(
     current_user: User = Depends(require_permission('purchases.create'))
 ):
     """
-    Add payment to a purchase and create a transaction record.
+    MODULE 5: Add payment to a purchase and create a transaction record.
     
-    CRITICAL: Purchase Payment Lifecycle
+    CRITICAL: Purchase Payment Lifecycle (NON-NEGOTIABLE)
+    - Lifecycle: Draft → Finalized → Partially Paid → Fully Paid → Locked
     - Purchases can have multiple payments until fully paid
-    - Each payment creates a CREDIT transaction (money OUT from cash/bank)
+    - Each payment creates a DEBIT transaction (reduces vendor payable liability)
     - Updates paid_amount_money and balance_due_money
-    - Status automatically updated: Draft → Partially Paid → Paid
     - Purchase is locked ONLY when balance_due_money == 0
+    - Finalized ≠ Locked (payments drive locking, not finalization)
     
     Required fields:
-    - payment_amount: Amount being paid
+    - payment_amount: Decimal (OMR, 3 decimals), must be > 0 and ≤ balance_due
     - payment_mode: Cash | Bank Transfer | Card | UPI | Online | Cheque
     - account_id: Account from which payment is made
     
     Optional fields:
+    - reference: Payment reference (optional)
     - notes: Additional notes for the payment
     """
     try:
