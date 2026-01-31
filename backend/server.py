@@ -5301,7 +5301,7 @@ async def get_returnable_invoices(
         
         formatted_invoices.append({
             "id": inv["id"],
-            "invoice_no": inv["invoice_number"],
+            "invoice_number": inv["invoice_number"],  # Fixed: consistent field name
             "date": inv["date"].isoformat() if isinstance(inv["date"], datetime) else inv["date"],
             "party_name": party_name,
             "total_amount": grand_total,
