@@ -11164,11 +11164,11 @@ async def update_return(
         if 'items' in return_data:
             items = [ReturnItem(**item) for item in return_data['items']]
             update_fields['items'] = [item.model_dump() for item in items]
-            # Recalculate totals
+            # Recalculate totals using Decimal (NO FLOATS)
             total_weight = sum(item.weight_grams for item in items)
             total_amount = sum(item.amount for item in items)
-            update_fields['total_weight_grams'] = round(total_weight, 3)
-            update_fields['total_amount'] = round(total_amount, 2)
+            update_fields['total_weight_grams'] = total_weight.quantize(Decimal('0.001'))
+            update_fields['total_amount'] = total_amount.quantize(Decimal('0.01'))
             
             # Validate updated return amount doesn't exceed original
             reference_type = existing_return.get('reference_type')
@@ -11190,15 +11190,15 @@ async def update_return(
                     current_return_id=return_id  # Exclude current return from calculation
                 )
         
-        # Update other fields
+        # Update other fields using Decimal (NO FLOATS)
         if 'reason' in return_data:
             update_fields['reason'] = return_data['reason']
         if 'refund_mode' in return_data:
             update_fields['refund_mode'] = return_data['refund_mode']
         if 'refund_money_amount' in return_data:
-            update_fields['refund_money_amount'] = round(float(return_data['refund_money_amount']), 2)
+            update_fields['refund_money_amount'] = Decimal(str(return_data['refund_money_amount'])).quantize(Decimal('0.01'))
         if 'refund_gold_grams' in return_data:
-            update_fields['refund_gold_grams'] = round(float(return_data['refund_gold_grams']), 3)
+            update_fields['refund_gold_grams'] = Decimal(str(return_data['refund_gold_grams'])).quantize(Decimal('0.001'))
         if 'refund_gold_purity' in return_data:
             update_fields['refund_gold_purity'] = return_data['refund_gold_purity']
         if 'payment_mode' in return_data:
