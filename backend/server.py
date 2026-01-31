@@ -3775,14 +3775,21 @@ async def add_payment_to_purchase(
     
     purchase = Purchase(**existing)
     
-    # Validate purchase is not locked
+    # MODULE 5: Validate purchase is Finalized (required before payment)
+    if purchase.finalized_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot add payment to draft purchase. Purchase must be finalized first."
+        )
+    
+    # MODULE 5: Validate purchase is not locked
     if purchase.locked:
         raise HTTPException(
             status_code=400,
-            detail="Cannot add payment to locked purchase. Purchase is already finalized and fully paid."
+            detail="Cannot add payment to locked purchase. Purchase is already fully paid."
         )
     
-    # Validate payment amount
+    # MODULE 5: Validate payment amount
     payment_amount = payment_data.get('payment_amount')
     if not payment_amount or payment_amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than 0")
