@@ -1249,19 +1249,48 @@ export default function JobCardsPage() {
                     </Select>
                   </div>
                   
-                  {/* Making Charge Value */}
-                  <div>
-                    <Label className="text-xs">
-                      Making Charge ({item.making_charge_type === 'per_gram' ? 'OMR/g' : 'OMR'})
-                    </Label>
-                    <Input
-                      data-testid={`making-charge-value-${idx}`}
-                      type="number"
-                      step="0.001"
-                      value={item.making_charge_value || 0}
-                      onChange={(e) => updateItem(idx, 'making_charge_value', e.target.value)}
-                    />
-                  </div>
+                  {/* MODULE 2: Conditional fields for Per Inch making charge */}
+                  {item.making_charge_type === 'per_inch' ? (
+                    <>
+                      {/* Length in Inches */}
+                      <div>
+                        <Label className="text-xs">Length (inches)</Label>
+                        <Input
+                          data-testid={`length-in-inches-${idx}`}
+                          type="number"
+                          step="0.01"
+                          value={item.length_in_inches || 0}
+                          onChange={(e) => updateItem(idx, 'length_in_inches', e.target.value)}
+                        />
+                      </div>
+                      
+                      {/* Rate per Inch */}
+                      <div>
+                        <Label className="text-xs">Rate per Inch (OMR)</Label>
+                        <Input
+                          data-testid={`rate-per-inch-${idx}`}
+                          type="number"
+                          step="0.001"
+                          value={item.rate_per_inch || 0}
+                          onChange={(e) => updateItem(idx, 'rate_per_inch', e.target.value)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    /* Making Charge Value (for flat and per_gram) */
+                    <div>
+                      <Label className="text-xs">
+                        Making Charge ({item.making_charge_type === 'per_gram' ? 'OMR/g' : 'OMR'})
+                      </Label>
+                      <Input
+                        data-testid={`making-charge-value-${idx}`}
+                        type="number"
+                        step="0.001"
+                        value={item.making_charge_value || 0}
+                        onChange={(e) => updateItem(idx, 'making_charge_value', e.target.value)}
+                      />
+                    </div>
+                  )}
                   
                   {/* VAT Percent */}
                   <div>
