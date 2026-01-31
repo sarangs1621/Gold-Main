@@ -492,7 +492,7 @@ ROLE_PERMISSIONS = {
         'inventory.view',
         'jobcards.view', 'jobcards.create', 'jobcards.update',
         'worktypes.view',
-        'reports.view',
+        'reports.view', 'reports.inventory.view',
         'returns.view', 'returns.create',
     ],
 }
