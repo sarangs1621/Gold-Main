@@ -71,9 +71,13 @@ def test_create_party_without_customer_id(token):
     """Test Case 1: Create Party without Customer ID"""
     print_section("TEST CASE 1: Create Party without Customer ID")
     
+    # Use timestamp to make phone unique
+    import time
+    unique_suffix = str(int(time.time()))[-8:]
+    
     party_data = {
-        "name": "Test Customer No ID",
-        "phone": "1234567890",
+        "name": f"Test No ID {unique_suffix}",
+        "phone": f"91{unique_suffix}",
         "address": "Test Address",
         "party_type": "customer",
         "notes": "Test party without customer ID"
