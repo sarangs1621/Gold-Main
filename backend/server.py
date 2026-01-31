@@ -7201,7 +7201,7 @@ async def update_shop_settings(settings_data: dict, current_user: User = Depends
     await create_audit_log(current_user.id, current_user.full_name, "settings", "shop_settings", "update", settings_data)
     return {"message": "Shop settings updated successfully"}
 
-@api_router.post("/invoices", response_model=Invoice)
+@api_router.post("/invoices", response_model=Invoice, status_code=201)
 async def create_invoice(invoice_data: dict, current_user: User = Depends(require_permission('invoices.create'))):
     if not user_has_permission(current_user, 'invoices.create'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to create invoices")
