@@ -1,0 +1,162 @@
+
+================================================================================
+MODULE 4 - PURCHASES (CORE PURCHASE ENTRY) - TEST SUITE
+================================================================================
+
+Running comprehensive tests for MODULE 4 requirements...
+
+✅ Login successful
+
+================================================================================
+TEST 1: Single Item Purchase with 22K Valuation (purity ≠ 22K)
+================================================================================
+
+📝 Test Data:
+   Vendor: Axe
+   Weight: 10.5g
+   Entered Purity: 999K (24K)
+   Conversion Factor: 0.92
+   Expected Amount (22K valuation): 10454.35 OMR
+   Formula: (10.5 × 916) ÷ 0.92 = 10454.35
+
+✅ Purchase created successfully!
+   Purchase ID: f6bca15a...
+   Item Amount: 10454.35 OMR
+   Total Amount: 10454.35 OMR
+   Expected: 10454.35 OMR
+
+✅ TEST 1 PASSED: Amount correctly calculated using 22K valuation
+   ✓ Entered purity (999K) was stored but NOT used in calculation
+   ✓ Valuation used 916 purity (22K) as required
+
+================================================================================
+TEST 2: Multiple Items with Different Purities (All 22K Valuation)
+================================================================================
+
+📝 Test Data (Conversion Factor: 0.917):
+   Item 1: 5.0g at 999K → 4994.55 OMR (using 916K)
+   Item 2: 7.5g at 916K → 7491.82 OMR (using 916K)
+   Item 3: 10.0g at 750K → 9989.09 OMR (using 916K)
+   Total Expected: 22475.46 OMR
+
+✅ Purchase created with 3 items!
+   Item 1: 4994.55 OMR (expected: 4994.55)
+   Item 2: 7491.82 OMR (expected: 7491.82)
+   Item 3: 9989.09 OMR (expected: 9989.09)
+   Total: 22475.46 OMR (expected: 22475.46)
+
+✅ TEST 2 PASSED: All items valued correctly using 22K
+   ✓ Different purities stored for reference
+   ✓ All items used 916 purity in calculation
+   ✓ Same conversion factor applied to all items
+
+================================================================================
+TEST 3: Conversion Factor Switch (0.920 vs 0.917)
+================================================================================
+
+📝 Test Data:
+   Weight: 10.0g
+   Entered Purity: 916K
+   Expected with CF 0.920: 9956.52 OMR
+   Expected with CF 0.917: 9989.09 OMR
+   Difference: 32.57 OMR
+
+✅ Both purchases created successfully!
+   CF 0.920: 9956.52 OMR (expected: 9956.52)
+   CF 0.917: 9989.09 OMR (expected: 9989.09)
+
+✅ TEST 3 PASSED: Conversion factor correctly affects amount
+   ✓ CF 0.920 calculated correctly
+   ✓ CF 0.917 calculated correctly
+   ✓ Different CFs produce different amounts
+
+================================================================================
+TEST 4: Walk-in Purchase (No Party Creation)
+================================================================================
+
+✅ Walk-in purchase created successfully!
+   Purchase ID: 3ca85f0e...
+   Vendor Type: walk_in
+   Walk-in Name: Walk-in Vendor Test
+   Vendor Party ID: None
+   Parties before: 23
+   Parties after: 23
+
+✅ TEST 4 PASSED: Walk-in purchase works without Party creation
+   ✓ No new Party created
+   ✓ vendor_party_id is None
+   ✓ Walk-in name stored on purchase
+
+================================================================================
+TEST 5: Walk-in Purchase with Optional Customer ID
+================================================================================
+
+✅ Walk-in purchase with Customer ID created!
+   Purchase ID: ee67704b...
+   Walk-in Name: Walk-in Vendor with ID
+   Customer ID: 12345678
+
+✅ TEST 5 PASSED: Walk-in with Customer ID works
+   ✓ Customer ID stored correctly
+
+================================================================================
+TEST 6: Finalized Purchase is Locked
+================================================================================
+
+✅ Fully paid purchase created!
+   Purchase ID: c66b9ad7...
+   Status: draft
+   Locked: False
+   Balance Due: 998.64 OMR
+
+❌ TEST 6 FAILED: Purchase not locked correctly
+
+================================================================================
+TEST 7: Entered Purity Does NOT Affect Valuation
+================================================================================
+
+📝 Test Data:
+   Weight: 10.0g (same for all)
+   Conversion Factor: 0.92 (same for all)
+   Expected Amount: 9956.52 OMR (should be same for all)
+   Testing purities: [750, 916, 999]
+   Purity 750K → Amount: 9956.52 OMR
+   Purity 916K → Amount: 9956.52 OMR
+   Purity 999K → Amount: 9956.52 OMR
+
+✅ TEST 7 PASSED: Entered purity does NOT affect valuation
+   ✓ All purities ([750, 916, 999]) resulted in same amount
+   ✓ All amounts matched 22K valuation: 9956.52 OMR
+   ✓ Entered purity is storage-only field
+
+================================================================================
+TEST 8: Decimal Precision (No Float Errors)
+================================================================================
+
+📝 Testing precision with edge cases:
+   ✓ Weight 10.123g, CF 0.92 → 10078.99 OMR (expected: 10078.99)
+   ✓ Weight 7.777g, CF 0.917 → 7768.52 OMR (expected: 7768.52)
+   ✓ Weight 15.555g, CF 0.92 → 15487.37 OMR (expected: 15487.37)
+
+✅ TEST 8 PASSED: Decimal precision maintained
+   ✓ No floating-point rounding errors
+   ✓ All amounts calculated with precision
+
+================================================================================
+TEST SUMMARY
+================================================================================
+✅ PASSED: TEST 1: 22K Valuation (Single Item)
+✅ PASSED: TEST 2: Multiple Items, Different Purities
+✅ PASSED: TEST 3: Conversion Factor Switch
+✅ PASSED: TEST 4: Walk-in Without Party
+✅ PASSED: TEST 5: Walk-in With Customer ID
+❌ FAILED: TEST 6: Finalized Purchase Locked
+✅ PASSED: TEST 7: Entered Purity Not Used
+✅ PASSED: TEST 8: Decimal Precision
+
+================================================================================
+TOTAL: 7/8 tests passed
+
+⚠️ 1 test(s) failed. Please review implementation.
+================================================================================
+
