@@ -481,12 +481,15 @@ export default function PartiesPage() {
             phone: '',
             address: '',
             party_type: 'customer',
-            notes: ''
+            notes: '',
+            customer_id: ''
           });
           setValidationErrors({
             name: '',
-            phone: ''
+            phone: '',
+            customer_id: ''
           });
+          setIsCustomerIdLocked(false);
           setShowDialog(true);
         }}>
           <Plus className="w-4 h-4 mr-2" /> Add Party
