@@ -7043,6 +7043,9 @@ async def get_transactions(
         txn['balance_before'] = round(balance_before, 3)
         txn['balance_after'] = round(running_balance, 3)
     
+    # Convert Decimal128 to float for JSON serialization
+    transactions = decimal_to_float(transactions)
+    
     return create_pagination_response(transactions, total_count, page, page_size)
 
 @api_router.post("/transactions", response_model=Transaction)
