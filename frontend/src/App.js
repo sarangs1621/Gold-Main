@@ -16,6 +16,7 @@ import PartiesPage from './pages/PartiesPage';
 import FinancePage from './pages/FinancePage';
 import DailyClosingPage from './pages/DailyClosingPage';
 import ReportsPage from './pages/ReportsPageEnhanced';
+import ReportsLedgerPage from './pages/ReportsLedgerPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import SettingsPage from './pages/SettingsPage';
 import PurchasesPage from './pages/PurchasesPage';
