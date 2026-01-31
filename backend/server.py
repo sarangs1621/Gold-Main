@@ -2362,11 +2362,12 @@ async def delete_inventory_header(header_id: str, current_user: User = Depends(r
     if not existing_header:
         raise HTTPException(status_code=404, detail="Inventory header not found")
     
-    # Check if header has current stock
-    if existing_header.get('current_qty', 0) > 0 or existing_header.get('current_weight', 0) > 0:
+    # MODULE 7: Check if header has current stock (calculate from StockMovements)
+    stock = await calculate_stock_from_movements(header_id=header_id)
+    if stock['total_weight'] > 0 or stock['total_qty'] > 0:
         raise HTTPException(
             status_code=400, 
-            detail=f"Cannot delete inventory header with existing stock. Current: {existing_header.get('current_qty', 0)} qty, {existing_header.get('current_weight', 0)}g"
+            detail=f"Cannot delete inventory header with existing stock. Current: {stock['total_qty']} qty, {round(stock['total_weight'], 3)}g"
         )
     
     # Soft delete the header
