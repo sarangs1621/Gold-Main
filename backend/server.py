@@ -438,8 +438,11 @@ PERMISSIONS = {
     'worktypes.view': 'View work types',
     'worktypes.manage': 'Manage work types (create, update, deactivate)',
     
-    # Reports
-    'reports.view': 'View reports',
+    # Reports (MODULE 8: Ledger-based reporting)
+    'reports.view': 'View reports',  # Legacy - being deprecated
+    'reports.inventory.view': 'View inventory reports (ledger-based)',
+    'reports.finance.view': 'View finance reports (ledger-based)',
+    'reports.gold.view': 'View gold reports (ledger-based)',
     
     # Audit Logs
     'audit.view': 'View audit logs',
