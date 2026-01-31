@@ -239,19 +239,31 @@ export default function PartiesPage() {
     }
   };
 
-  const handleEdit = (party) => {
+  const handleEdit = async (party) => {
     setEditingParty(party);
     setFormData({
       name: party.name,
       phone: party.phone || '',
       address: party.address || '',
       party_type: party.party_type,
-      notes: party.notes || ''
+      notes: party.notes || '',
+      customer_id: party.customer_id || ''
     });
     setValidationErrors({
       name: '',
-      phone: ''
+      phone: '',
+      customer_id: ''
     });
+    
+    // Check if customer_id is locked
+    try {
+      const lockResponse = await API.get(`/api/parties/${party.id}/customer-id-lock-status`);
+      setIsCustomerIdLocked(lockResponse.data.is_locked);
+    } catch (error) {
+      console.error('Failed to check customer_id lock status:', error);
+      setIsCustomerIdLocked(false);
+    }
+    
     setShowDialog(true);
   };
 
