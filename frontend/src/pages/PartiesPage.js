@@ -543,6 +543,7 @@ export default function PartiesPage() {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Name</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Phone</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Customer ID</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Type</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Address</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase">Actions</th>
@@ -553,6 +554,7 @@ export default function PartiesPage() {
                     <tr key={party.id} className="border-t hover:bg-muted/30">
                       <td className="px-4 py-3 font-medium">{party.name}</td>
                       <td className="px-4 py-3 text-sm font-mono">{party.phone || '-'}</td>
+                      <td className="px-4 py-3 text-sm font-mono">{party.customer_id || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${
                           party.party_type === 'customer' ? 'bg-blue-100 text-blue-800' : 
