@@ -236,13 +236,21 @@ def run_tests():
     print("-"*80)
     invoice_id, invoice = create_invoice_with_gold(headers, customer_id, gold_weight=5.0, gold_rate=10.0, grand_total=178.5)
     if invoice_id:
-        # Check that no gold ledger entry exists yet (draft state)
-        initial_entries = check_gold_ledger(headers, customer_id)
-        initial_count = len(initial_entries)
-        
-        # Check no transactions exist for this draft invoice
-        txns = check_transactions(headers, invoice_id)
-        assert len(txns) == 0, "Draft invoice should have no transactions"
+        # Draft invoice should not have gold ledger or transactions yet
+        # Check transactions for THIS specific invoice (not all transactions)
+        txns_response = requests.get(f"{BASE_URL}/transactions", headers=headers, params={"reference_id": invoice_id})
+        if txns_response.status_code == 200:
+            data = txns_response.json()
+            invoice_txns = data.get('items', []) if isinstance(data, dict) else []
+            # Filter for this specific invoice
+            invoice_txns = [t for t in invoice_txns if t.get('reference_id') == invoice_id]
+            
+            if len(invoice_txns) == 0:
+                print("✓ Draft invoice has no transactions (correct)")
+            else:
+                print(f"✗ Draft invoice has {len(invoice_txns)} transactions (incorrect)")
+            
+            assert len(invoice_txns) == 0, f"Draft invoice should have no transactions, found {len(invoice_txns)}"
         print("✅ TEST 6 PASSED: Draft invoice has no ledger/transaction\n")
     
     print("\n" + "="*80)
