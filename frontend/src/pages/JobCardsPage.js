@@ -1222,10 +1222,11 @@ export default function JobCardsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="polish">Polish</SelectItem>
-                        <SelectItem value="resize">Resize</SelectItem>
-                        <SelectItem value="repair">Repair</SelectItem>
-                        <SelectItem value="custom">Custom</SelectItem>
+                        {workTypes.map((wt) => (
+                          <SelectItem key={wt.id} value={wt.name.toLowerCase()}>
+                            {wt.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
