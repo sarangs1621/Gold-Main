@@ -11010,8 +11010,8 @@ async def create_return(
         
         # ========== STEP 4: SAVE DRAFT RETURN (NO IMPACTS) ==========
         
-        # Convert to Decimal128 for storage
-        return_dict = convert_return_to_decimal(return_obj.model_dump())
+        # Convert to Decimal128 for storage (use mode='python' to preserve Decimal objects)
+        return_dict = convert_return_to_decimal(return_obj.model_dump(mode='python'))
         
         # Insert draft return
         await db.returns.insert_one(return_dict)
