@@ -2646,6 +2646,57 @@ async def get_stock_totals(
     
     return stock_totals
 
+
+@api_router.get("/inventory/stock/{header_id}")
+async def get_stock_by_header(
+    header_id: str,
+    as_of: Optional[str] = None,
+    current_user: User = Depends(require_permission('inventory.view'))
+):
+    """
+    MODULE 7: Get stock for a specific inventory header calculated from StockMovements
+    
+    Path Parameters:
+        header_id: ID of the inventory header
+    
+    Query Parameters:
+        as_of: Optional ISO timestamp for historical stock calculation
+    
+    Returns detailed stock breakdown for the specified header
+    """
+    if not user_has_permission(current_user, 'inventory.view'):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to view inventory")
+    
+    # Verify header exists
+    header = await db.inventory_headers.find_one({"id": header_id, "is_deleted": False}, {"_id": 0})
+    if not header:
+        raise HTTPException(status_code=404, detail="Inventory header not found")
+    
+    # Parse as_of timestamp if provided
+    as_of_dt = None
+    if as_of:
+        try:
+            as_of_dt = datetime.fromisoformat(as_of.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid as_of timestamp format. Use ISO 8601 format")
+    
+    # MODULE 7: Calculate stock from StockMovements
+    stock = await calculate_stock_from_movements(
+        header_id=header_id,
+        as_of=as_of_dt
+    )
+    
+    return {
+        "header_id": header['id'],
+        "header_name": header['name'],
+        "total_qty": stock['total_qty'],
+        "total_weight": stock['total_weight'],
+        "in_weight": stock['in_weight'],
+        "out_weight": stock['out_weight'],
+        "adjustment_weight": stock['adjustment_weight'],
+        "as_of": stock['as_of']
+    }
+
 @api_router.get("/inventory/reconciliation")
 async def reconcile_inventory(current_user: User = Depends(require_permission('inventory.adjust'))):
     """
