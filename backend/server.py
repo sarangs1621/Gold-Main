@@ -486,6 +486,7 @@ ROLE_PERMISSIONS = {
         'worktypes.view', 'worktypes.manage',
         'reports.view', 'reports.inventory.view', 'reports.finance.view', 'reports.gold.view',
         'returns.view', 'returns.create', 'returns.finalize',
+        'dashboard.finance.view',  # MODULE 9: Finance dashboard access (manager acts as accountant)
     ],
     'staff': [
         # Staff has limited permissions - mostly view and create
