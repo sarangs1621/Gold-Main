@@ -934,6 +934,17 @@ class JobCard(BaseModel):
     template_name: Optional[str] = None  # Required when card_type='template'
     delivery_days_offset: Optional[int] = None  # For templates: days from creation to delivery
 
+class WorkType(BaseModel):
+    """Work Type Master Data - User configurable work types for job cards"""
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str  # Name of the work type (e.g., Polish, Resize, Repair, Custom)
+    is_active: bool = True  # Active work types shown in dropdowns
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: str
+    is_deleted: bool = False  # Soft delete
+
 class InvoiceItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     category: Optional[str] = None  # Inventory category for stock tracking
