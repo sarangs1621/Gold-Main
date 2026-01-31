@@ -1120,7 +1120,7 @@ class PurchaseItem(BaseModel):
 
 class Purchase(BaseModel):
     """
-    MODULE 4: Purchase model for tracking gold purchases from vendors.
+    MODULE 4 & 5: Purchase model for tracking gold purchases from vendors.
     
     VALUATION LOGIC (NON-NEGOTIABLE):
     - All items valued at 22K (916 purity) regardless of entered purity
@@ -1132,6 +1132,13 @@ class Purchase(BaseModel):
     - items[]: List of PurchaseItem (different purities allowed)
     - amount_total: Sum of all item amounts
     - conversion_factor: One per purchase (applies to all items)
+    
+    MODULE 5: PAYMENT LIFECYCLE (NON-NEGOTIABLE):
+    - Lifecycle: Draft → Finalized → Partially Paid → Fully Paid → Locked
+    - Finalized ≠ Locked (payments drive locking, not finalization)
+    - Purchase locks ONLY when balance_due_money == 0
+    - After finalization: items/valuation LOCKED, payments ALLOWED
+    - After locked: NO changes allowed (immutable)
     
     WALK-IN VENDOR:
     - vendor_type: "saved" or "walk_in"
