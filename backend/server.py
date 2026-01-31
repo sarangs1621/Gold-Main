@@ -520,7 +520,8 @@ def float_to_decimal128(value):
 
 def convert_return_to_decimal(return_data: dict) -> dict:
     """
-    Convert float values in return data to Decimal128 for precise storage.
+    Convert Decimal values in return data to Decimal128 for MongoDB storage.
+    Recursively handles nested dictionaries and lists.
     
     Args:
         return_data: Return document dictionary
@@ -528,61 +529,22 @@ def convert_return_to_decimal(return_data: dict) -> dict:
     Returns:
         Return document with Decimal128 values for weights and amounts
     """
-    # Convert top-level fields
-    if 'total_weight_grams' in return_data:
-        val = return_data['total_weight_grams']
-        if isinstance(val, Decimal):
-            return_data['total_weight_grams'] = Decimal128(val.quantize(Decimal('0.001')))
+    def convert_value(value):
+        """Recursively convert Decimal to Decimal128"""
+        if isinstance(value, Decimal):
+            # Determine precision based on value magnitude
+            if abs(value) < 100:  # Likely weight (grams) - 3 decimals
+                return Decimal128(value.quantize(Decimal('0.001')))
+            else:  # Likely amount (money) - 2 decimals
+                return Decimal128(value.quantize(Decimal('0.01')))
+        elif isinstance(value, dict):
+            return {k: convert_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [convert_value(item) for item in value]
         else:
-            return_data['total_weight_grams'] = Decimal128(
-                Decimal(str(val)).quantize(Decimal('0.001'))
-            )
-    if 'total_amount' in return_data:
-        val = return_data['total_amount']
-        if isinstance(val, Decimal):
-            return_data['total_amount'] = Decimal128(val.quantize(Decimal('0.01')))
-        else:
-            return_data['total_amount'] = Decimal128(
-                Decimal(str(val)).quantize(Decimal('0.01'))
-            )
-    if 'refund_money_amount' in return_data:
-        val = return_data['refund_money_amount']
-        if isinstance(val, Decimal):
-            return_data['refund_money_amount'] = Decimal128(val.quantize(Decimal('0.01')))
-        else:
-            return_data['refund_money_amount'] = Decimal128(
-                Decimal(str(val)).quantize(Decimal('0.01'))
-            )
-    if 'refund_gold_grams' in return_data:
-        val = return_data['refund_gold_grams']
-        if isinstance(val, Decimal):
-            return_data['refund_gold_grams'] = Decimal128(val.quantize(Decimal('0.001')))
-        else:
-            return_data['refund_gold_grams'] = Decimal128(
-                Decimal(str(val)).quantize(Decimal('0.001'))
-            )
+            return value
     
-    # Convert items
-    if 'items' in return_data:
-        for item in return_data['items']:
-            if 'weight_grams' in item:
-                val = item['weight_grams']
-                if isinstance(val, Decimal):
-                    item['weight_grams'] = Decimal128(val.quantize(Decimal('0.001')))
-                else:
-                    item['weight_grams'] = Decimal128(
-                        Decimal(str(val)).quantize(Decimal('0.001'))
-                    )
-            if 'amount' in item:
-                val = item['amount']
-                if isinstance(val, Decimal):
-                    item['amount'] = Decimal128(val.quantize(Decimal('0.01')))
-                else:
-                    item['amount'] = Decimal128(
-                        Decimal(str(val)).quantize(Decimal('0.01'))
-                    )
-    
-    return return_data
+    return convert_value(return_data)
 
 # Status transition validation rules
 STATUS_TRANSITIONS = {
