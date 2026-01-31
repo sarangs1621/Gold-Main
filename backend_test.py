@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 class JobCardsModule2Tester:
-    def __init__(self, base_url="https://sales-ledger-9.preview.emergentagent.com"):
+    def __init__(self, base_url="https://gold-invoice-system.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.csrf_token = None
