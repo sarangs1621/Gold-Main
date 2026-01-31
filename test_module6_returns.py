@@ -58,7 +58,7 @@ class Module6TestRunner:
         print(f"{YELLOW}[SETUP] Logging in...{RESET}")
         response = await self.client.post(
             f"{API_BASE}/auth/login",
-            data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+            json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
         )
         
         if response.status_code != 200:
