@@ -43,14 +43,19 @@ export default function PartiesPage() {
     phone: '',
     address: '',
     party_type: 'customer',
-    notes: ''
+    notes: '',
+    customer_id: ''
   });
   
   // Validation errors state
   const [validationErrors, setValidationErrors] = useState({
     name: '',
-    phone: ''
+    phone: '',
+    customer_id: ''
   });
+  
+  // Track if customer_id is locked (read-only)
+  const [isCustomerIdLocked, setIsCustomerIdLocked] = useState(false);
   
   // MODULE 9: Gold deposit form data
   const [depositFormData, setDepositFormData] = useState({
