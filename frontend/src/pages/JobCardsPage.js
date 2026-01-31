@@ -21,6 +21,7 @@ export default function JobCardsPage() {
   const [jobcards, setJobcards] = useState([]);
   const [parties, setParties] = useState([]);
   const [workers, setWorkers] = useState([]);
+  const [workTypes, setWorkTypes] = useState([]); // MODULE 2: Dynamic work types
   const [inventoryHeaders, setInventoryHeaders] = useState([]);
   const [invoicesMap, setInvoicesMap] = useState({}); // Map of jobcard_id -> invoice data
   const [showDialog, setShowDialog] = useState(false);
