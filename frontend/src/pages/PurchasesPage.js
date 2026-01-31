@@ -53,6 +53,20 @@ export default function PurchasesPage() {
   const [impactData, setImpactData] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   
+  // MODULE 5: Payment dialog state
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [paymentPurchase, setPaymentPurchase] = useState(null);
+  const [paymentData, setPaymentData] = useState({
+    payment_amount: '',
+    payment_mode: 'Cash',
+    account_id: '',
+    reference: '',
+    notes: ''
+  });
+  const [accounts, setAccounts] = useState([]);
+  const [isAddingPayment, setIsAddingPayment] = useState(false);
+  const [paymentErrors, setPaymentErrors] = useState({});
+  
   // Filters
   const [filterVendor, setFilterVendor] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
