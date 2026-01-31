@@ -22,6 +22,7 @@ import {
 
 const allNavItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', permission: null }, // Everyone can view dashboard
+  { path: '/finance-dashboard', icon: TrendingUp, label: 'Finance Dashboard', permission: 'dashboard.finance.view' }, // MODULE 9: Finance Dashboard
   { path: '/inventory', icon: Package, label: 'Inventory', permission: 'inventory.view' },
   { path: '/jobcards', icon: ClipboardList, label: 'Job Cards', permission: 'jobcards.view' },
   { path: '/invoices', icon: FileText, label: 'Invoices', permission: 'invoices.view' },
@@ -33,6 +34,7 @@ const allNavItems = [
   { path: '/reports/ledger', icon: BarChart3, label: 'Ledger Reports', permission: null }, // MODULE 8: Ledger-based reports
   { path: '/reports', icon: BarChart3, label: 'Reports (Legacy)', permission: 'reports.view' },
   { path: '/audit-logs', icon: History, label: 'Audit Logs', permission: 'audit.view' },
+  { path: '/admin/system-validation', icon: Shield, label: 'System Validation', permission: 'dashboard.finance.view' }, // MODULE 9: Admin only
   { path: '/workers', icon: UserCog, label: 'Workers', permission: null }, // Everyone can access workers
   { path: '/settings', icon: Settings, label: 'Settings', permission: null } // Everyone can access settings
 ];
