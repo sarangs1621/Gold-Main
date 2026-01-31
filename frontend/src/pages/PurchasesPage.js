@@ -1158,18 +1158,208 @@ export default function PurchasesPage() {
               <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                 <div>
                   <Label className="text-xs text-gray-500">Total Amount</Label>
-                  <p className="text-2xl font-bold">{safeToFixed(viewPurchase.amount_total, 2)} OMR</p>
+                  <p className="text-2xl font-bold" data-testid="purchase-total-amount">{safeToFixed(viewPurchase.amount_total, 2)} OMR</p>
                 </div>
                 <div>
                   <Label className="text-xs text-gray-500">Valuation Purity</Label>
                   <p className="text-lg font-semibold text-amber-600">916 (22K)</p>
                 </div>
               </div>
+
+              {/* MODULE 5: Payment Summary - Show only for Finalized purchases */}
+              {viewPurchase.finalized_at && (
+                <div className="border-t pt-4 space-y-3">
+                  <Label className="text-lg font-semibold">Payment Summary</Label>
+                  
+                  <div className="grid grid-cols-3 gap-4 bg-blue-50 p-4 rounded-lg">
+                    <div>
+                      <Label className="text-xs text-gray-600">Paid Amount</Label>
+                      <p className="text-lg font-bold text-green-600" data-testid="purchase-paid-amount">
+                        {safeToFixed(viewPurchase.paid_amount_money || 0, 2)} OMR
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Balance Due</Label>
+                      <p className="text-lg font-bold text-orange-600" data-testid="purchase-balance-due">
+                        {safeToFixed(viewPurchase.balance_due_money || 0, 2)} OMR
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Status</Label>
+                      <div data-testid="purchase-status-badge">{getStatusBadge(viewPurchase.status)}</div>
+                    </div>
+                  </div>
+
+                  {/* Lock Status */}
+                  {viewPurchase.locked && (
+                    <div className="bg-gray-100 p-3 rounded flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-700" data-testid="purchase-locked-status">
+                        Purchase Locked - Fully Paid
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Add Payment Button in View Dialog */}
+                  {!viewPurchase.locked && (
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      onClick={() => {
+                        setShowViewDialog(false);
+                        handleOpenPaymentDialog(viewPurchase);
+                      }}
+                      data-testid="add-payment-view-btn"
+                    >
+                      <DollarSign className="w-4 h-4 mr-2" />
+                      Add Payment
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           <DialogFooter>
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODULE 5: Payment Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Payment</DialogTitle>
+            <DialogDescription>
+              Add a payment for this purchase. Maximum amount: {paymentPurchase ? safeToFixed(paymentPurchase.balance_due_money, 2) : '0.00'} OMR
+            </DialogDescription>
+          </DialogHeader>
+
+          {paymentPurchase && (
+            <div className="space-y-4">
+              {/* Purchase Summary */}
+              <div className="bg-gray-50 p-3 rounded space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Purchase Total:</span>
+                  <span className="font-mono font-semibold">{safeToFixed(paymentPurchase.amount_total, 2)} OMR</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Already Paid:</span>
+                  <span className="font-mono text-green-600">{safeToFixed(paymentPurchase.paid_amount_money || 0, 2)} OMR</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t pt-2">
+                  <span>Balance Due:</span>
+                  <span className="font-mono text-orange-600">{safeToFixed(paymentPurchase.balance_due_money, 2)} OMR</span>
+                </div>
+              </div>
+
+              {/* Payment Amount */}
+              <div className="space-y-2">
+                <Label htmlFor="payment-amount">Payment Amount (OMR) *</Label>
+                <Input
+                  id="payment-amount"
+                  type="number"
+                  step="0.01"
+                  value={paymentData.payment_amount}
+                  onChange={(e) => setPaymentData({ ...paymentData, payment_amount: e.target.value })}
+                  placeholder="0.00"
+                  className={paymentErrors.payment_amount ? 'border-red-500' : ''}
+                  data-testid="payment-amount-input"
+                />
+                {paymentErrors.payment_amount && (
+                  <FormErrorMessage message={paymentErrors.payment_amount} />
+                )}
+              </div>
+
+              {/* Payment Mode */}
+              <div className="space-y-2">
+                <Label htmlFor="payment-mode">Payment Mode *</Label>
+                <Select
+                  value={paymentData.payment_mode}
+                  onValueChange={(value) => setPaymentData({ ...paymentData, payment_mode: value })}
+                >
+                  <SelectTrigger id="payment-mode" data-testid="payment-mode-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="Card">Card</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="Online">Online</SelectItem>
+                    <SelectItem value="Cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+                {paymentErrors.payment_mode && (
+                  <FormErrorMessage message={paymentErrors.payment_mode} />
+                )}
+              </div>
+
+              {/* Account */}
+              <div className="space-y-2">
+                <Label htmlFor="payment-account">Payment Account *</Label>
+                <Select
+                  value={paymentData.account_id}
+                  onValueChange={(value) => setPaymentData({ ...paymentData, account_id: value })}
+                >
+                  <SelectTrigger id="payment-account" data-testid="payment-account-select">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name} ({account.account_type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {paymentErrors.account_id && (
+                  <FormErrorMessage message={paymentErrors.account_id} />
+                )}
+              </div>
+
+              {/* Reference */}
+              <div className="space-y-2">
+                <Label htmlFor="payment-reference">Reference (Optional)</Label>
+                <Input
+                  id="payment-reference"
+                  value={paymentData.reference}
+                  onChange={(e) => setPaymentData({ ...paymentData, reference: e.target.value })}
+                  placeholder="Payment reference"
+                  data-testid="payment-reference-input"
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label htmlFor="payment-notes">Notes (Optional)</Label>
+                <Input
+                  id="payment-notes"
+                  value={paymentData.notes}
+                  onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })}
+                  placeholder="Additional notes"
+                  data-testid="payment-notes-input"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowPaymentDialog(false)}
+              disabled={isAddingPayment}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddPayment}
+              disabled={isAddingPayment}
+              className="bg-blue-600 hover:bg-blue-700"
+              data-testid="confirm-payment-btn"
+            >
+              {isAddingPayment ? <ButtonLoadingSpinner text="Processing..." /> : 'Add Payment'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
