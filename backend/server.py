@@ -709,20 +709,21 @@ def calculate_purchase_status(paid_amount: float, total_amount: float) -> str:
     """
     Calculate purchase status based on payment amounts (SERVER-SIDE AUTHORITY).
     
-    CRITICAL BUSINESS RULES (FIXED - Match Invoice Lifecycle):
-    - Draft: No payment made (balance_due == total_amount)
+    MODULE 5: CRITICAL BUSINESS RULES
+    - Draft: No payment made (paid_amount == 0)
     - Partially Paid: Some payment made (0 < paid_amount < total_amount)
-    - Paid: Fully paid (paid_amount >= total_amount)
+    - Fully Paid: Fully paid (paid_amount >= total_amount)
     
-    Purchase Lifecycle: Draft → Partially Paid → Paid → Finalized (Locked)
-    - Only lock when balance_due == 0
+    Purchase Lifecycle: Draft → Finalized → Partially Paid → Fully Paid → Locked
+    - Purchase locks ONLY when balance_due == 0
+    - Finalized ≠ Locked (payments drive locking, not finalization)
     
     Args:
         paid_amount: Amount paid to vendor
         total_amount: Total purchase amount
     
     Returns:
-        Status string: "Draft" | "Partially Paid" | "Paid"
+        Status string: "Draft" | "Partially Paid" | "Fully Paid"
     """
     paid_amount = round(float(paid_amount), 2)
     total_amount = round(float(total_amount), 2)
@@ -732,7 +733,7 @@ def calculate_purchase_status(paid_amount: float, total_amount: float) -> str:
     elif paid_amount < total_amount:
         return "Partially Paid"
     else:  # paid_amount >= total_amount
-        return "Paid"
+        return "Fully Paid"
 
 class PaginationMetadata(BaseModel):
     total_count: int
