@@ -645,6 +645,26 @@ export default function PartiesPage() {
               )}
             </div>
             <div>
+              <Label>Customer ID (Oman ID) <span className="text-xs text-muted-foreground">(Optional)</span></Label>
+              <Input
+                data-testid="party-customer-id-input"
+                value={formData.customer_id}
+                onChange={handleCustomerIdChange}
+                className={validationErrors.customer_id ? 'border-red-500' : ''}
+                placeholder="Numeric only"
+                disabled={isCustomerIdLocked}
+              />
+              {validationErrors.customer_id && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.customer_id}</p>
+              )}
+              {isCustomerIdLocked && (
+                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Customer ID is read-only (linked to finalized records)
+                </p>
+              )}
+            </div>
+            <div>
               <Label>Type *</Label>
               <Select value={formData.party_type} onValueChange={(val) => setFormData({...formData, party_type: val})}>
                 <SelectTrigger data-testid="party-type-select">
