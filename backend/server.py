@@ -1086,7 +1086,7 @@ class AuditLog(BaseModel):
 class GoldLedgerEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    party_id: str
+    party_id: Optional[str] = None  # MODULE 3: Can be None for walk-in customers
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     type: str  # "IN" or "OUT" - IN = shop receives gold from party, OUT = shop gives gold to party
     weight_grams: float  # 3 decimal precision
