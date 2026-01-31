@@ -2943,9 +2943,17 @@ async def get_finance_dashboard(
         all_accounts = await db.accounts.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
         account_map = {acc['id']: acc for acc in all_accounts}
         
-        # Identify Cash and Bank accounts
-        cash_accounts = [acc['id'] for acc in all_accounts if acc.get('name', '').lower() in ['cash', 'petty cash']]
-        bank_accounts = [acc['id'] for acc in all_accounts if acc.get('name', '').lower() in ['bank']]
+        # Identify Cash and Bank accounts (flexible matching)
+        # Cash accounts: contain 'cash' in name OR have account_type 'asset' with 'cash' in name
+        # Bank accounts: contain 'bank' in name
+        cash_accounts = [
+            acc['id'] for acc in all_accounts 
+            if 'cash' in acc.get('name', '').lower()
+        ]
+        bank_accounts = [
+            acc['id'] for acc in all_accounts 
+            if 'bank' in acc.get('name', '').lower()
+        ]
         
         # Get all transactions matching filters
         transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
