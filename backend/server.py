@@ -2458,44 +2458,54 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
             )
     
     # MODULE 7: Create StockMovement with new structure
-    movement = StockMovement(
-        movement_type="ADJUSTMENT",  # MODULE 7: All manual movements are ADJUSTMENTS
-        source_type="MANUAL",  # MODULE 7: Manual source
-        source_id=None,  # No source transaction for manual adjustments
-        header_id=movement_data['header_id'],
-        header_name=header['name'],
-        description=movement_data.get('description', 'Manual inventory adjustment'),
-        weight=weight,  # MODULE 7: Decimal precision
-        purity=purity,
-        audit_reference=movement_data['audit_reference'].strip(),  # MODULE 7: REQUIRED
-        notes=movement_data.get('notes'),
-        created_by=current_user.id,
+    movement_dict = {
+        "id": str(uuid.uuid4()),
+        "date": datetime.now(timezone.utc),
+        "created_at": datetime.now(timezone.utc),
+        "movement_type": "ADJUSTMENT",  # MODULE 7: All manual movements are ADJUSTMENTS
+        "source_type": "MANUAL",  # MODULE 7: Manual source
+        "source_id": None,  # No source transaction for manual adjustments
+        "header_id": movement_data['header_id'],
+        "header_name": header['name'],
+        "description": movement_data.get('description', 'Manual inventory adjustment'),
+        "weight": Decimal128(weight),  # MODULE 7: Convert to Decimal128 for MongoDB
+        "purity": purity,
+        "audit_reference": movement_data['audit_reference'].strip(),  # MODULE 7: REQUIRED
+        "notes": movement_data.get('notes'),
+        "created_by": current_user.id,
         # Legacy fields for backward compatibility
-        qty_delta=1 if weight > 0 else -1,
-        weight_delta=float(weight)
-    )
+        "qty_delta": 1 if weight > 0 else -1,
+        "weight_delta": float(weight),
+        "reference_type": None,
+        "reference_id": None,
+        "confirmation_reason": None,
+        "is_deleted": False,
+        "item_id": None
+    }
     
     # MODULE 7: Insert stock movement ONLY
     # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
-    await db.stock_movements.insert_one(movement.model_dump())
+    await db.stock_movements.insert_one(movement_dict)
     
     # Create audit log
     await create_audit_log(
         current_user.id,
         current_user.full_name,
         "inventory",
-        movement.id,
+        movement_dict["id"],
         "manual_adjustment",
         {
             "movement_type": "ADJUSTMENT",
             "source_type": "MANUAL",
             "header_name": header['name'],
             "weight": str(weight),
-            "audit_reference": movement.audit_reference
+            "audit_reference": movement_data['audit_reference'].strip()
         }
     )
     
-    return movement
+    # Return the movement (convert Decimal128 back to float for API response)
+    movement_dict['weight'] = float(weight)
+    return movement_dict
 
 @api_router.delete("/inventory/movements/{movement_id}")
 async def delete_stock_movement(movement_id: str, current_user: User = Depends(require_permission('inventory.adjust'))):
