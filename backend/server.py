@@ -11015,7 +11015,7 @@ async def create_return(
                 "reference": f"{reference_type}: {reference_number}",
                 "party": party_name,
                 "items_count": len(items),
-                "total_amount": total_amount,
+                "total_amount": float(total_amount),  # Convert Decimal to float for audit log
                 "status": "draft"
             }
         )
