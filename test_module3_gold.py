@@ -115,7 +115,13 @@ def check_gold_ledger(headers, party_id=None):
     
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
-        entries = response.json()
+        data = response.json()
+        # Handle pagination response
+        if isinstance(data, dict) and 'items' in data:
+            entries = data.get('items', [])
+        else:
+            entries = data if isinstance(data, list) else []
+        
         print(f"✓ Gold ledger entries found: {len(entries)}")
         for entry in entries[:3]:  # Show first 3
             print(f"  - Type: {entry.get('type')}, Weight: {entry.get('weight_grams')}g, Purpose: {entry.get('purpose')}")
