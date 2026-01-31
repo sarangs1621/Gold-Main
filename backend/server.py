@@ -3561,67 +3561,150 @@ async def get_party_summary(party_id: str, current_user: User = Depends(require_
 @limiter.limit("1000/hour")  # General authenticated rate limit: 1000 requests per hour
 async def create_purchase(request: Request, purchase_data: dict, current_user: User = Depends(require_permission('purchases.create'))):
     """
-    Create and auto-finalize a new purchase.
+    MODULE 4: Create and auto-finalize a new purchase with 22K valuation.
     
-    ⚠️ CRITICAL BUSINESS RULE: Purchase Lifecycle Matches Invoice Lifecycle ⚠️
-    - Purchase Lifecycle: Draft → Partially Paid → Paid → Finalized (Locked)
-    - Inventory is updated immediately
-    - Accounting entries are created immediately
-    - Status is calculated based on payment: "Draft" | "Partially Paid" | "Paid"
-    - Locking is allowed ONLY AFTER FULL PAYMENT (balance_due == 0)
-    - Editing and adding payments allowed until fully paid
+    ⚠️ CRITICAL BUSINESS RULES ⚠️
+    
+    1. MANDATORY 22K INTERNAL VALUATION:
+       - Formula: amount = (weight × 916) ÷ conversion_factor
+       - conversion_factor: 0.920 or 0.917 (selectable per purchase)
+       - entered_purity: STORAGE ONLY, does NOT affect valuation
+    
+    2. MULTIPLE ITEMS & PURITIES:
+       - items[]: Each with own weight, entered_purity, calculated_amount
+       - Same conversion_factor applies to all items in purchase
+       - amount_total: Sum of all item amounts
+    
+    3. WALK-IN VENDOR:
+       - vendor_type: "saved" or "walk_in"
+       - If walk_in: walk_in_name required, vendor_party_id optional
+       - walk_in_customer_id: Optional Oman Customer ID
+    
+    4. FINALIZATION SAFETY:
+       - Draft: Fully editable
+       - Finalized: Locked and immutable
+       - Status calculated based on payment
     """
     if not user_has_permission(current_user, 'purchases.create'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to create purchases")
     
-    # Validate vendor exists and is vendor type
-    vendor = await db.parties.find_one({"id": purchase_data.get("vendor_party_id"), "is_deleted": False})
-    if not vendor:
-        raise HTTPException(status_code=404, detail="Vendor not found")
-    if vendor.get("party_type") != "vendor":
-        raise HTTPException(status_code=400, detail="Party must be a vendor type")
+    # ========== MODULE 4: VENDOR VALIDATION ==========
+    vendor_type = purchase_data.get("vendor_type", "saved")
+    vendor = None
+    vendor_name = None
     
-    # ========== CRITICAL VALIDATION: NEVER TRUST FRONTEND ==========
-    # Extract and validate weight
+    if vendor_type == "saved":
+        # Saved vendor: Must have vendor_party_id and must be vendor type
+        vendor_party_id = purchase_data.get("vendor_party_id")
+        if not vendor_party_id:
+            raise HTTPException(status_code=400, detail="vendor_party_id is required for saved vendors")
+        
+        vendor = await db.parties.find_one({"id": vendor_party_id, "is_deleted": False})
+        if not vendor:
+            raise HTTPException(status_code=404, detail="Vendor not found")
+        if vendor.get("party_type") != "vendor":
+            raise HTTPException(status_code=400, detail="Party must be a vendor type")
+        vendor_name = vendor.get("name")
+        
+    elif vendor_type == "walk_in":
+        # Walk-in vendor: Must have walk_in_name, vendor_party_id is optional
+        walk_in_name = purchase_data.get("walk_in_name", "").strip()
+        if not walk_in_name:
+            raise HTTPException(status_code=400, detail="walk_in_name is required for walk-in vendors")
+        vendor_name = walk_in_name
+        purchase_data["vendor_party_id"] = None  # Ensure it's None for walk-ins
+    else:
+        raise HTTPException(status_code=400, detail="vendor_type must be 'saved' or 'walk_in'")
+    
+    # ========== MODULE 4: CONVERSION FACTOR VALIDATION ==========
+    conversion_factor = purchase_data.get("conversion_factor")
+    if conversion_factor is None:
+        raise HTTPException(status_code=400, detail="conversion_factor is required")
+    
     try:
-        weight_grams = float(purchase_data.get("weight_grams", 0))
+        conversion_factor = float(conversion_factor)
     except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid weight value")
+        raise HTTPException(status_code=400, detail="Invalid conversion_factor value")
     
-    if weight_grams <= 0:
-        raise HTTPException(status_code=400, detail="Weight must be greater than 0")
+    # Validate conversion_factor is one of the allowed values (0.920 or 0.917)
+    if conversion_factor not in [0.920, 0.917]:
+        raise HTTPException(status_code=400, detail="conversion_factor must be 0.920 or 0.917")
     
-    # Extract and validate rate
+    # ========== MODULE 4: ITEMS VALIDATION & CALCULATION ==========
+    items_data = purchase_data.get("items", [])
+    if not items_data or len(items_data) == 0:
+        raise HTTPException(status_code=400, detail="At least one item is required")
+    
+    # Calculate each item's amount using 22K valuation formula
+    validated_items = []
+    total_amount = Decimal('0')
+    total_weight = Decimal('0')
+    
+    for idx, item_data in enumerate(items_data):
+        # Validate required fields
+        if not item_data.get("description"):
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: description is required")
+        
+        # Validate and extract weight
+        try:
+            weight = Decimal(str(item_data.get("weight_grams", 0)))
+        except (ValueError, TypeError, decimal.InvalidOperation):
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Invalid weight value")
+        
+        if weight <= 0:
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Weight must be greater than 0")
+        
+        # Validate and extract entered_purity
+        try:
+            entered_purity = int(item_data.get("entered_purity", 916))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Invalid purity value")
+        
+        if entered_purity < 1 or entered_purity > 999:
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Purity must be between 1 and 999")
+        
+        # ========== CRITICAL: 22K VALUATION FORMULA ==========
+        # amount = (weight × 916) ÷ conversion_factor
+        # Using Decimal for precision
+        amount = (weight * Decimal('916')) / Decimal(str(conversion_factor))
+        amount = amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
+        
+        # Create validated item
+        validated_item = {
+            "id": str(uuid.uuid4()),
+            "description": item_data.get("description"),
+            "weight_grams": float(weight.quantize(Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)),
+            "entered_purity": entered_purity,
+            "calculated_amount": float(amount)
+        }
+        validated_items.append(validated_item)
+        
+        total_amount += amount
+        total_weight += weight
+    
+    # Round total amount to 2 decimals
+    total_amount = total_amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
+    total_weight = total_weight.quantize(Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
+    
+    # ========== PAYMENT VALIDATION ==========
     try:
-        rate_per_gram = float(purchase_data.get("rate_per_gram", 0))
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid rate value")
-    
-    if rate_per_gram <= 0:
-        raise HTTPException(status_code=400, detail="Rate per gram must be greater than 0")
-    
-    # RECALCULATE total_amount on backend (SINGLE SOURCE OF TRUTH)
-    # Never trust client-sent total_amount
-    calculated_total = round(weight_grams * rate_per_gram, 2)
-    
-    # Validate paid amount
-    try:
-        paid_amount = float(purchase_data.get("paid_amount_money", 0))
-    except (ValueError, TypeError):
+        paid_amount = Decimal(str(purchase_data.get("paid_amount_money", 0)))
+    except (ValueError, TypeError, decimal.InvalidOperation):
         raise HTTPException(status_code=400, detail="Invalid paid amount value")
     
     if paid_amount < 0:
         raise HTTPException(status_code=400, detail="Paid amount cannot be negative")
     
-    if paid_amount > calculated_total:
-        raise HTTPException(status_code=400, detail=f"Paid amount ({paid_amount}) cannot exceed total amount ({calculated_total})")
+    if paid_amount > total_amount:
+        raise HTTPException(status_code=400, detail=f"Paid amount ({paid_amount}) cannot exceed total amount ({total_amount})")
     
-    # Set validated and calculated values
-    purchase_data["weight_grams"] = round(weight_grams, 3)
-    purchase_data["rate_per_gram"] = round(rate_per_gram, 2)
-    purchase_data["amount_total"] = calculated_total  # Backend-calculated, not from client
-    purchase_data["paid_amount_money"] = round(paid_amount, 2)
-    purchase_data["balance_due_money"] = round(calculated_total - paid_amount, 2)
+    # Validate account exists if payment made
+    if paid_amount > 0:
+        if not purchase_data.get("account_id"):
+            raise HTTPException(status_code=400, detail="account_id is required when paid_amount_money > 0")
+        account = await db.accounts.find_one({"id": purchase_data["account_id"], "is_deleted": False})
+        if not account:
+            raise HTTPException(status_code=404, detail="Payment account not found")
     
     # Round gold settlement fields to 3 decimals
     if purchase_data.get("advance_in_gold_grams") is not None:
@@ -3629,19 +3712,15 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     if purchase_data.get("exchange_in_gold_grams") is not None:
         purchase_data["exchange_in_gold_grams"] = round(float(purchase_data["exchange_in_gold_grams"]), 3)
     
-    # Validate account exists if payment made
-    if purchase_data["paid_amount_money"] > 0:
-        if not purchase_data.get("account_id"):
-            raise HTTPException(status_code=400, detail="account_id is required when paid_amount_money > 0")
-        account = await db.accounts.find_one({"id": purchase_data["account_id"], "is_deleted": False})
-        if not account:
-            raise HTTPException(status_code=404, detail="Payment account not found")
+    # ========== SET CALCULATED VALUES ==========
+    purchase_data["items"] = validated_items
+    purchase_data["conversion_factor"] = conversion_factor
+    purchase_data["amount_total"] = float(total_amount)
+    purchase_data["paid_amount_money"] = float(paid_amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP))
+    purchase_data["balance_due_money"] = float((total_amount - paid_amount).quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP))
+    purchase_data["valuation_purity_fixed"] = 916  # Always 916
     
-    # Ensure valuation purity is always 916
-    purchase_data["valuation_purity_fixed"] = 916
-    
-    # ========== CRITICAL: CALCULATE STATUS (SERVER-SIDE AUTHORITY) ==========
-    # Purchase lifecycle matches Invoice lifecycle: Draft → Partially Paid → Paid → Finalized (Locked)
+    # ========== STATUS CALCULATION ==========
     calculated_status = calculate_purchase_status(
         paid_amount=purchase_data["paid_amount_money"],
         total_amount=purchase_data["amount_total"]
@@ -3654,9 +3733,7 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     purchase_data["finalized_at"] = finalize_time
     purchase_data["finalized_by"] = current_user.username
     
-    # ========== LOCKING RULES: ONLY LOCK WHEN FULLY PAID ==========
-    # Locking is allowed ONLY AFTER FULL PAYMENT (balance_due == 0)
-    # This allows editing and adding payments until purchase is fully paid
+    # ========== LOCKING RULES ==========
     if purchase_data["balance_due_money"] == 0:
         purchase_data["locked"] = True
         purchase_data["locked_at"] = finalize_time
@@ -3675,8 +3752,8 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     
     # ========== AUTO-FINALIZATION: CREATE ALL ACCOUNTING ENTRIES ==========
     
-    # === OPERATION 1: Create Stock IN movement ===
-    purity = purchase_data["valuation_purity_fixed"]  # Always 916
+    # === OPERATION 1: Create Stock IN movements for each item ===
+    purity = 916  # Always 916
     header_name = f"Gold {purity // 41.6:.0f}K"  # 916 = 22K
     
     header = await db.inventory_headers.find_one({"name": header_name, "is_deleted": False})
@@ -3684,37 +3761,37 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
         # Create new inventory header
         header = InventoryHeader(
             name=header_name,
-            purity=purity,
             current_qty=0,
             current_weight=0,
             created_by=current_user.username
         )
         await db.inventory_headers.insert_one(header.model_dump())
     
-    # Create Stock IN movement
-    movement = StockMovement(
-        date=purchase.date,
-        movement_type="Stock IN",
-        header_id=header.get("id") if isinstance(header, dict) else header.id,
-        header_name=header_name,
-        description=f"Purchase from {vendor['name']}: {purchase.description}",
-        qty_delta=1,
-        weight_delta=purchase.weight_grams,
-        purity=purity,
-        reference_type="purchase",
-        reference_id=purchase_id,
-        created_by=current_user.username,
-        notes=f"Entered purity: {purchase.entered_purity}, Valuation purity: {purity}"
-    )
-    await db.stock_movements.insert_one(movement.model_dump())
+    # Create Stock IN movement for each item
+    for item in validated_items:
+        movement = StockMovement(
+            date=purchase.date,
+            movement_type="Stock IN",
+            header_id=header.get("id") if isinstance(header, dict) else header.id,
+            header_name=header_name,
+            description=f"Purchase from {vendor_name}: {item['description']}",
+            qty_delta=1,
+            weight_delta=item['weight_grams'],
+            purity=purity,
+            reference_type="purchase",
+            reference_id=purchase_id,
+            created_by=current_user.username,
+            notes=f"Entered purity: {item['entered_purity']}, Valuation purity: {purity}, Conversion factor: {conversion_factor}"
+        )
+        await db.stock_movements.insert_one(movement.model_dump())
     
-    # Update inventory header
+    # Update inventory header with total weight
     header_id = header.get("id") if isinstance(header, dict) else header.id
     await db.inventory_headers.update_one(
         {"id": header_id},
         {"$inc": {
-            "current_qty": 1,
-            "current_weight": purchase.weight_grams
+            "current_qty": len(validated_items),
+            "current_weight": float(total_weight)
         }}
     )
     
@@ -3734,12 +3811,12 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
             account_id=purchase_data["account_id"],
             account_name=account["name"],
             party_id=purchase.vendor_party_id,
-            party_name=vendor["name"],
+            party_name=vendor_name,
             amount=round(purchase_data["paid_amount_money"], 2),
             category="Purchase Payment",
             reference_type="purchase",
             reference_id=purchase_id,
-            notes=f"Payment for purchase: {purchase.description} ({purchase.weight_grams}g)",
+            notes=f"Payment for purchase: {purchase.description} ({float(total_weight)}g)",
             created_by=current_user.username
         )
         await db.transactions.insert_one(payment_transaction.model_dump())
@@ -3756,12 +3833,15 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     if advance_gold and advance_gold > 0:
         advance_gold = round(advance_gold, 3)
         
+        # For walk-in, party_id should be None
+        gold_party_id = purchase.vendor_party_id if vendor_type == "saved" else None
+        
         advance_entry = GoldLedgerEntry(
-            party_id=purchase.vendor_party_id,
+            party_id=gold_party_id,
             date=purchase.date,
             type="OUT",
             weight_grams=advance_gold,
-            purity_entered=purchase.entered_purity,
+            purity_entered=validated_items[0]['entered_purity'] if validated_items else 916,
             purpose="advance_gold",
             reference_type="purchase",
             reference_id=purchase_id,
@@ -3775,12 +3855,15 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     if exchange_gold and exchange_gold > 0:
         exchange_gold = round(exchange_gold, 3)
         
+        # For walk-in, party_id should be None
+        gold_party_id = purchase.vendor_party_id if vendor_type == "saved" else None
+        
         exchange_entry = GoldLedgerEntry(
-            party_id=purchase.vendor_party_id,
+            party_id=gold_party_id,
             date=purchase.date,
             type="IN",
             weight_grams=exchange_gold,
-            purity_entered=purchase.entered_purity,
+            purity_entered=validated_items[0]['entered_purity'] if validated_items else 916,
             purpose="exchange",
             reference_type="purchase",
             reference_id=purchase_id,
@@ -3802,7 +3885,7 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
             purchases_account = Account(
                 name="Purchases",
                 account_type="expense",
-                balance=0,
+                current_balance=0,
                 created_by=current_user.username
             )
             await db.accounts.insert_one(purchases_account.model_dump())
@@ -3815,12 +3898,12 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
             account_id=purchases_account.get("id") if isinstance(purchases_account, dict) else purchases_account.id,
             account_name="Purchases",
             party_id=purchase.vendor_party_id,
-            party_name=vendor["name"],
+            party_name=vendor_name,
             amount=round(balance_due, 2),
             category="Purchase",
             reference_type="purchase",
             reference_id=purchase_id,
-            notes=f"Vendor payable for purchase: {purchase.description} ({purchase.weight_grams}g @ {purchase.rate_per_gram}/g)",
+            notes=f"Vendor payable for purchase: {purchase.description} ({float(total_weight)}g, 22K valuation, CF: {conversion_factor})",
             created_by=current_user.username
         )
         await db.transactions.insert_one(payable_transaction.model_dump())
@@ -3833,14 +3916,15 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
         record_id=purchase_id,
         action="create",
         changes={
+            "vendor_type": vendor_type,
             "vendor_party_id": purchase.vendor_party_id,
-            "weight_grams": purchase.weight_grams,
-            "entered_purity": purchase.entered_purity,
+            "walk_in_name": purchase.walk_in_name if vendor_type == "walk_in" else None,
+            "conversion_factor": conversion_factor,
+            "items_count": len(validated_items),
+            "total_weight_grams": float(total_weight),
             "amount_total": purchase.amount_total,
             "paid_amount_money": purchase.paid_amount_money,
             "balance_due_money": purchase.balance_due_money,
-            "advance_in_gold_grams": purchase.advance_in_gold_grams,
-            "exchange_in_gold_grams": purchase.exchange_in_gold_grams,
             "status": calculated_status,
             "auto_finalized": True
         }
