@@ -5828,6 +5828,14 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
     # ATOMIC OPERATION: Finalize invoice with all required operations
     finalized_at = datetime.now(timezone.utc)
     
+    # MODULE 7: Check idempotency - prevent duplicate stock movements
+    already_finalized = await check_finalize_idempotency("SALE", invoice_id)
+    if already_finalized:
+        raise HTTPException(
+            status_code=400,
+            detail="Invoice has already been finalized. Stock movements already created."
+        )
+    
     # Step 1: Update invoice to finalized status
     await db.invoices.update_one(
         {"id": invoice_id},
@@ -5840,7 +5848,7 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
         }
     )
     
-    # Step 2: DIRECTLY REDUCE from inventory headers and create audit trail
+    # Step 2: Create Stock OUT movements and validate stock availability
     # ONLY for SALE invoices - SERVICE invoices skip stock deduction entirely
     stock_errors = []
     if is_sale_invoice:
@@ -5852,7 +5860,7 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                 header_id_for_movement = None
                 header_name_for_movement = item.category or item.description or "Uncategorized"
                 
-                # Try to find matching inventory header for stock reduction
+                # Try to find matching inventory header for stock validation
                 if item.category:
                     header = await db.inventory_headers.find_one(
                         {"name": item.category, "is_deleted": False}, 
@@ -5863,29 +5871,22 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                         header_id_for_movement = header['id']
                         header_name_for_movement = header['name']
                         
-                        # Calculate new stock values
-                        current_qty = header.get('current_qty', 0)
-                        current_weight = header.get('current_weight', 0)
-                        new_qty = current_qty - item.qty
-                        new_weight = current_weight - item.weight
+                        # MODULE 7: Validate stock availability using StockMovements (SSOT)
+                        is_valid, error_msg, available_weight, available_qty = await validate_stock_availability(
+                            header['id'],
+                            item.weight * item.qty,
+                            item.qty
+                        )
                         
-                        # Check for insufficient stock
-                        if new_qty < 0 or new_weight < 0:
-                            stock_errors.append(
-                                f"{item.category}: Need {item.qty} qty/{item.weight}g, but only {current_qty} qty/{current_weight}g available"
-                            )
+                        if not is_valid:
+                            stock_errors.append(error_msg)
                             # Continue to next item - don't create movement if insufficient stock
                             continue
-                        
-                        # DIRECT UPDATE: Reduce from inventory header
-                        await db.inventory_headers.update_one(
-                            {"id": header['id']},
-                            {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
-                        )
                 
-                # MODULE 7: ALWAYS create Stock OUT movement for audit trail
+                # MODULE 7: Create Stock OUT movement
                 # Even if no inventory header exists, the movement must be recorded
                 # CRITICAL: Use new MODULE 7 structure
+                # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
                 movement = StockMovement(
                     movement_type="OUT",  # MODULE 7: Simplified taxonomy
                     source_type="SALE",  # MODULE 7: Source tracking
@@ -5893,12 +5894,12 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                     header_id=header_id_for_movement,  # May be None if no header found
                     header_name=header_name_for_movement,
                     description=f"Sale - Invoice {invoice.invoice_number}",
-                    weight=Decimal(str(item.weight)).quantize(Decimal('0.001')),  # MODULE 7: Decimal precision
+                    weight=Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001')),  # MODULE 7: Total weight (item.weight * qty)
                     purity=item.purity,
                     created_by=current_user.id,
                     # Legacy fields for backward compatibility
                     qty_delta=-item.qty,
-                    weight_delta=-item.weight,
+                    weight_delta=-(item.weight * item.qty),
                     reference_type="invoice",
                     reference_id=invoice.id
                 )
