@@ -3562,7 +3562,7 @@ async def get_party_summary(party_id: str, current_user: User = Depends(require_
 @limiter.limit("1000/hour")  # General authenticated rate limit: 1000 requests per hour
 async def create_purchase(request: Request, purchase_data: dict, current_user: User = Depends(require_permission('purchases.create'))):
     """
-    MODULE 4: Create and auto-finalize a new purchase with 22K valuation.
+    MODULE 4: Create a new DRAFT purchase with 22K valuation.
     
     ⚠️ CRITICAL BUSINESS RULES ⚠️
     
@@ -3581,10 +3581,11 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
        - If walk_in: walk_in_name required, vendor_party_id optional
        - walk_in_customer_id: Optional Oman Customer ID
     
-    4. FINALIZATION SAFETY:
-       - Draft: Fully editable
-       - Finalized: Locked and immutable
-       - Status calculated based on payment
+    4. DRAFT MODE (MODULE 4):
+       - Purchase saved as status="draft"
+       - NO financial impact until finalized
+       - Fully editable until finalized
+       - Use /finalize endpoint to commit
     """
     if not user_has_permission(current_user, 'purchases.create'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to create purchases")
