@@ -194,11 +194,13 @@ export default function PartiesPage() {
     // Validate all fields before submission
     const nameError = validateName(formData.name);
     const phoneError = validatePhone(formData.phone);
+    const customerIdError = validateCustomerId(formData.customer_id);
     
-    if (nameError || phoneError) {
+    if (nameError || phoneError || customerIdError) {
       setValidationErrors({
         name: nameError,
-        phone: phoneError
+        phone: phoneError,
+        customer_id: customerIdError
       });
       toast.error('Please fix validation errors before submitting');
       return;
@@ -220,12 +222,15 @@ export default function PartiesPage() {
         phone: '',
         address: '',
         party_type: 'customer',
-        notes: ''
+        notes: '',
+        customer_id: ''
       });
       setValidationErrors({
         name: '',
-        phone: ''
+        phone: '',
+        customer_id: ''
       });
+      setIsCustomerIdLocked(false);
       loadParties();
     } catch (error) {
       // Display backend validation error message if available
