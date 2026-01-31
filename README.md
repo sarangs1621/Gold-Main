@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# Testing 6
-=======
-# Testing 3
->>>>>>> b31b2899369e7f105da7aa8839d08cfdd4516b95
+Module 3 Implemented
 
 A comprehensive full-stack ERP system for managing gold jewelry business operations including inventory, job cards, invoices, purchases, parties, transactions, and financial reports.
 
