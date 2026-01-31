@@ -3718,41 +3718,26 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     purchase_data["items"] = validated_items
     purchase_data["conversion_factor"] = conversion_factor
     purchase_data["amount_total"] = float(total_amount)
-    purchase_data["paid_amount_money"] = float(paid_amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP))
-    purchase_data["balance_due_money"] = float((total_amount - paid_amount).quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP))
+    purchase_data["paid_amount_money"] = 0.0  # MODULE 4: Always start at 0 for draft
+    purchase_data["balance_due_money"] = float(total_amount)
     purchase_data["valuation_purity_fixed"] = 916  # Always 916
     
-    # ========== STATUS CALCULATION ==========
-    calculated_status = calculate_purchase_status(
-        paid_amount=purchase_data["paid_amount_money"],
-        total_amount=purchase_data["amount_total"]
-    )
-    
-    # Set creation and finalization metadata
-    finalize_time = datetime.now(timezone.utc)
+    # ========== MODULE 4: DRAFT STATUS ==========
+    # Save as draft - NO financial impact until finalized
     purchase_data["created_by"] = current_user.username
-    purchase_data["status"] = calculated_status
-    purchase_data["finalized_at"] = finalize_time
-    purchase_data["finalized_by"] = current_user.username
-    
-    # ========== LOCKING RULES ==========
-    if purchase_data["balance_due_money"] == 0:
-        purchase_data["locked"] = True
-        purchase_data["locked_at"] = finalize_time
-        purchase_data["locked_by"] = current_user.username
-    else:
-        purchase_data["locked"] = False
-        purchase_data["locked_at"] = None
-        purchase_data["locked_by"] = None
+    purchase_data["status"] = "draft"
+    purchase_data["finalized_at"] = None
+    purchase_data["finalized_by"] = None
+    purchase_data["locked"] = False
+    purchase_data["locked_at"] = None
+    purchase_data["locked_by"] = None
     
     # Create Purchase model instance
     purchase = Purchase(**purchase_data)
     purchase_id = purchase.id
     
-    # Insert purchase
+    # Insert purchase as DRAFT (no accounting entries yet)
     await db.purchases.insert_one(purchase.model_dump())
-    
-    # ========== AUTO-FINALIZATION: CREATE ALL ACCOUNTING ENTRIES ==========
     
     # === OPERATION 1: Create Stock IN movements for each item ===
     purity = 916  # Always 916
