@@ -282,7 +282,18 @@ def test_4_manual_adjustment_logged():
     
     # Get Gold 22K header
     response = requests.get(f"{BASE_URL}/inventory/headers", headers=get_headers())
-    headers = response.json()
+    if response.status_code != 200:
+        print(f"❌ FAIL: Could not get headers: {response.text}")
+        return False
+    
+    headers_data = response.json()
+    
+    # Handle pagination response format
+    if isinstance(headers_data, dict) and 'items' in headers_data:
+        headers = headers_data['items']
+    else:
+        headers = headers_data
+    
     gold_22k = next((h for h in headers if h["name"] == "Gold 22K"), None)
     
     if not gold_22k:
