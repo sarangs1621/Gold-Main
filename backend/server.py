@@ -433,6 +433,10 @@ PERMISSIONS = {
     'jobcards.update': 'Update job cards',
     'jobcards.delete': 'Delete job cards',
     
+    # Work Types (Master Data)
+    'worktypes.view': 'View work types',
+    'worktypes.manage': 'Manage work types (create, update, deactivate)',
+    
     # Reports
     'reports.view': 'View reports',
     
