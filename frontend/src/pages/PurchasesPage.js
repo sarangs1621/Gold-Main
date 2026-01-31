@@ -176,6 +176,17 @@ export default function PurchasesPage() {
     }
   };
 
+  // MODULE 5: Load accounts for payment
+  const loadAccounts = async () => {
+    try {
+      const response = await API.get(`/api/accounts?page_size=1000`);
+      setAccounts(response.data.items || []);
+    } catch (error) {
+      console.error('Failed to load accounts:', error);
+      toast.error('Failed to load payment accounts');
+    }
+  };
+
   useEffect(() => {
     loadPurchases();
   }, [filterVendor, filterStatus, startDate, endDate, currentPage]);
