@@ -863,6 +863,7 @@ class Party(BaseModel):
     address: Optional[str] = None
     party_type: str
     notes: Optional[str] = None
+    customer_id: Optional[str] = None  # Oman Customer ID - optional, numeric only
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str
     is_deleted: bool = False
