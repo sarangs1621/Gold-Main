@@ -1014,7 +1014,7 @@ class StockMovement(BaseModel):
     
     # Weight tracking (MODULE 7: Use Decimal for precision - NO FLOATS)
     weight: Decimal = Field(default=Decimal('0.000'))  # Weight in grams, 3 decimal precision
-    purity: int  # Gold purity (e.g., 916 for 22K)
+    purity: Optional[int] = None  # Gold purity (e.g., 916 for 22K) - optional for legacy data
     
     # Legacy fields for backward compatibility (DEPRECATED - use weight instead)
     qty_delta: Optional[float] = None  # DEPRECATED: Keep for old records
