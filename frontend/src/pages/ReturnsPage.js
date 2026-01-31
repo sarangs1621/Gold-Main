@@ -872,12 +872,27 @@ const ReturnsPage = () => {
                   <div className="text-sm text-gray-600 py-2">Loading invoice items...</div>
                 )}
                 
-                {/* Invoice-linked items: Show selection interface */}
+                {/* Invoice-linked items: Show selection interface with PARTIAL RETURN capability */}
                 {formData.return_type === 'sale_return' && formData.reference_id && returnableItems.length > 0 && !loadingItems && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">
-                    <p className="text-sm text-blue-800 mb-2">
-                      <span className="font-semibold">Invoice Items Auto-Loaded:</span> Adjust quantities/weights to return (within remaining limits)
-                    </p>
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-md p-3 mb-3">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-blue-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <h4 className="text-sm font-semibold text-blue-900 mb-1">✅ Partial Returns Enabled</h4>
+                        <p className="text-sm text-blue-800">
+                          All returnable items from the invoice have been loaded. You can:
+                        </p>
+                        <ul className="list-disc list-inside text-sm text-blue-800 mt-1 ml-2 space-y-0.5">
+                          <li><strong>Remove items</strong> you're NOT returning (click "Remove Item")</li>
+                          <li><strong>Adjust quantities/weights</strong> for partial returns (within limits shown)</li>
+                          <li><strong>Keep only what's actually being returned</strong></li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 )}
                 
@@ -887,7 +902,12 @@ const ReturnsPage = () => {
                   const maxWeight = item.max_weight || 99999;
                   
                   return (
-                    <div key={index} className="border border-gray-300 rounded-md p-4 mb-3">
+                    <div key={index} className="border border-gray-300 rounded-md p-4 mb-3 relative" data-testid={`return-item-${index}`}>
+                      {/* Item number badge */}
+                      <div className="absolute -top-2 -left-2 bg-blue-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                        {index + 1}
+                      </div>
+                      
                       <div className="grid grid-cols-5 gap-3 mb-2">
                         <div className="col-span-2">
                           <label className="block text-xs text-gray-600 mb-1">Description</label>
@@ -898,9 +918,10 @@ const ReturnsPage = () => {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             placeholder="Item description"
                             disabled={isInvoiceLinked}
+                            data-testid={`item-description-${index}`}
                           />
                           {isInvoiceLinked && (
-                            <p className="text-xs text-gray-500 mt-1">From invoice (read-only)</p>
+                            <p className="text-xs text-gray-500 mt-1">📦 From invoice (read-only)</p>
                           )}
                         </div>
                         <div>
@@ -919,9 +940,10 @@ const ReturnsPage = () => {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             min="1"
                             max={isInvoiceLinked ? maxQty : undefined}
+                            data-testid={`item-qty-${index}`}
                           />
                           {isInvoiceLinked && (
-                            <p className="text-xs text-gray-500 mt-1">Max: {maxQty}</p>
+                            <p className="text-xs text-green-600 mt-1 font-medium">Max: {maxQty}</p>
                           )}
                         </div>
                         <div>
@@ -941,9 +963,10 @@ const ReturnsPage = () => {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             min="0"
                             max={isInvoiceLinked ? maxWeight : undefined}
+                            data-testid={`item-weight-${index}`}
                           />
                           {isInvoiceLinked && (
-                            <p className="text-xs text-gray-500 mt-1">Max: {maxWeight.toFixed(3)}g</p>
+                            <p className="text-xs text-green-600 mt-1 font-medium">Max: {maxWeight.toFixed(3)}g</p>
                           )}
                         </div>
                         <div>
@@ -955,6 +978,7 @@ const ReturnsPage = () => {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             min="1"
                             disabled={isInvoiceLinked}
+                            data-testid={`item-purity-${index}`}
                           />
                         </div>
                       </div>
@@ -969,17 +993,27 @@ const ReturnsPage = () => {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             min="0"
                             disabled={isInvoiceLinked}
+                            data-testid={`item-amount-${index}`}
                           />
                         </div>
-                        <div className="col-span-3 flex items-end">
-                          {formData.items.length > 1 && !isInvoiceLinked && (
+                        <div className="col-span-3 flex items-end justify-between">
+                          {/* MODULE 6 FIX: Allow removing items even when invoice-linked for PARTIAL RETURNS */}
+                          {formData.items.length > 1 && (
                             <button
                               type="button"
                               onClick={() => removeItem(index)}
-                              className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                              className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded flex items-center gap-1 transition-colors"
+                              title={isInvoiceLinked ? "Remove this item from return (partial return)" : "Remove item"}
+                              data-testid={`remove-item-${index}`}
                             >
-                              Remove Item
+                              <X size={14} />
+                              <span>Remove Item</span>
                             </button>
+                          )}
+                          {isInvoiceLinked && (
+                            <span className="text-xs text-gray-500 italic">
+                              ✂️ Remove if not returning
+                            </span>
                           )}
                         </div>
                       </div>
@@ -987,14 +1021,23 @@ const ReturnsPage = () => {
                   );
                 })}
                 
+                {/* Show count of items being returned */}
+                {formData.items.length > 0 && (
+                  <div className="text-sm text-gray-600 mb-2">
+                    <strong>{formData.items.length}</strong> item(s) selected for return
+                  </div>
+                )}
+                
                 {/* Only allow adding items when NOT linked to invoice */}
                 {(!formData.reference_id || formData.return_type !== 'sale_return') && (
                   <button
                     type="button"
                     onClick={addItem}
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    data-testid="add-item-button"
                   >
-                    + Add Another Item
+                    <span className="text-lg">+</span>
+                    <span>Add Another Item</span>
                   </button>
                 )}
               </div>
