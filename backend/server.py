@@ -2745,6 +2745,41 @@ async def update_party(party_id: str, party_data: dict, current_user: User = Dep
     if not existing:
         raise HTTPException(status_code=404, detail="Party not found")
     
+    # Check if customer_id is being changed
+    customer_id_changing = 'customer_id' in party_data and party_data.get('customer_id') != existing.get('customer_id')
+    
+    # If customer_id is being changed, check if party is locked (linked to finalized records)
+    if customer_id_changing:
+        # Check for finalized invoices
+        finalized_invoice = await db.invoices.find_one({
+            "customer_id": party_id,
+            "is_deleted": False,
+            "status": "finalized"
+        })
+        
+        # Check for locked/paid purchases
+        locked_purchase = await db.purchases.find_one({
+            "vendor_party_id": party_id,
+            "is_deleted": False,
+            "$or": [
+                {"status": "finalized"},
+                {"payment_status": "paid"}
+            ]
+        })
+        
+        # Check for finalized returns
+        finalized_return = await db.returns.find_one({
+            "party_id": party_id,
+            "is_deleted": False,
+            "status": "finalized"
+        })
+        
+        if finalized_invoice or locked_purchase or finalized_return:
+            raise HTTPException(
+                status_code=400,
+                detail="Customer ID cannot be modified because this party is linked to finalized financial records (invoices, purchases, or returns)"
+            )
+    
     # Validate input data using PartyValidator
     # Create a copy with existing values as defaults for partial updates
     update_data = {
@@ -2752,7 +2787,8 @@ async def update_party(party_id: str, party_data: dict, current_user: User = Dep
         'phone': party_data.get('phone', existing.get('phone')),
         'address': party_data.get('address', existing.get('address')),
         'party_type': party_data.get('party_type', existing.get('party_type')),
-        'notes': party_data.get('notes', existing.get('notes'))
+        'notes': party_data.get('notes', existing.get('notes')),
+        'customer_id': party_data.get('customer_id', existing.get('customer_id'))
     }
     
     try:
@@ -2780,7 +2816,15 @@ async def update_party(party_id: str, party_data: dict, current_user: User = Dep
     # Update with validated data
     update_dict = validated_data.dict(exclude_unset=False)
     await db.parties.update_one({"id": party_id}, {"$set": update_dict})
-    await create_audit_log(current_user.id, current_user.full_name, "party", party_id, "update", update_dict)
+    
+    # Create audit log with customer_id information if it changed
+    audit_details = update_dict.copy()
+    if customer_id_changing:
+        audit_details['customer_id_changed'] = {
+            'old': existing.get('customer_id'),
+            'new': party_data.get('customer_id')
+        }
+    await create_audit_log(current_user.id, current_user.full_name, "party", party_id, "update", audit_details)
     
     updated = await db.parties.find_one({"id": party_id}, {"_id": 0})
     return Party(**updated)
