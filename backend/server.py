@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
 from decimal import Decimal
+import decimal  # MODULE 4: For decimal operations and ROUND_HALF_UP
 from bson import Decimal128, ObjectId
 import secrets
 
