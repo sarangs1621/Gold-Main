@@ -4318,10 +4318,29 @@ async def create_jobcard(jobcard_data: dict, current_user: User = Depends(requir
     if not jobcard_data.get("items") or len(jobcard_data["items"]) == 0:
         raise HTTPException(status_code=400, detail="At least one item is required")
     
-    # Generate IDs for items if not provided
-    for item in jobcard_data["items"]:
+    # Generate IDs for items if not provided and validate making charge types (MODULE 2)
+    for idx, item in enumerate(jobcard_data["items"]):
         if "id" not in item:
             item["id"] = str(uuid.uuid4())
+        
+        # MODULE 2: Validate making charge type and required fields
+        making_charge_type = item.get("making_charge_type")
+        if making_charge_type == "per_inch":
+            # Validate that length_in_inches and rate_per_inch are provided
+            if not item.get("length_in_inches") or item.get("length_in_inches") <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Item {idx + 1}: length_in_inches is required and must be greater than 0 for per_inch making charge"
+                )
+            if not item.get("rate_per_inch") or item.get("rate_per_inch") <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Item {idx + 1}: rate_per_inch is required and must be greater than 0 for per_inch making charge"
+                )
+            # Calculate making_charge_value using Decimal for precision
+            length = Decimal(str(item["length_in_inches"]))
+            rate = Decimal(str(item["rate_per_inch"]))
+            item["making_charge_value"] = float(length * rate)
     
     # Create JobCard model instance
     jobcard = JobCard(**jobcard_data)
