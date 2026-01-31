@@ -401,7 +401,12 @@ export default function JobCardsPage() {
         customer_name: '',
         walk_in_name: jobcard.walk_in_name || '',
         walk_in_phone: jobcard.walk_in_phone || '',
-        discount_amount: 0  // MODULE 7: Initialize discount
+        discount_amount: 0,  // MODULE 7: Initialize discount
+        // MODULE 3: Initialize gold fields
+        show_gold_section: false,
+        gold_weight: '',
+        gold_purity: '916',
+        gold_rate_per_gram: ''
       });
     } else {
       // Job card is for saved customer
@@ -411,7 +416,12 @@ export default function JobCardsPage() {
         customer_name: jobcard.customer_name || '',
         walk_in_name: '',
         walk_in_phone: '',
-        discount_amount: 0  // MODULE 7: Initialize discount
+        discount_amount: 0,  // MODULE 7: Initialize discount
+        // MODULE 3: Initialize gold fields
+        show_gold_section: false,
+        gold_weight: '',
+        gold_purity: '916',
+        gold_rate_per_gram: ''
       });
     }
     
