@@ -6058,10 +6058,9 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
             )
         
         # Calculate gold value using Decimal for precision (NO FLOATS)
-        from decimal import Decimal, ROUND_HALF_UP
         gold_weight_decimal = Decimal(str(invoice.gold_weight))
         gold_rate_decimal = Decimal(str(invoice.gold_rate_per_gram))
-        gold_value_decimal = (gold_weight_decimal * gold_rate_decimal).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        gold_value_decimal = (gold_weight_decimal * gold_rate_decimal).quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
         gold_value = float(gold_value_decimal)
         
         # Create GoldLedger entry (type=IN - shop receives gold from customer)
