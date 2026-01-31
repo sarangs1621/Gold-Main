@@ -3688,32 +3688,6 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     total_amount = total_amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
     total_weight = total_weight.quantize(Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
     
-    # ========== PAYMENT VALIDATION ==========
-    try:
-        paid_amount = Decimal(str(purchase_data.get("paid_amount_money", 0)))
-    except (ValueError, TypeError, decimal.InvalidOperation):
-        raise HTTPException(status_code=400, detail="Invalid paid amount value")
-    
-    if paid_amount < 0:
-        raise HTTPException(status_code=400, detail="Paid amount cannot be negative")
-    
-    if paid_amount > total_amount:
-        raise HTTPException(status_code=400, detail=f"Paid amount ({paid_amount}) cannot exceed total amount ({total_amount})")
-    
-    # Validate account exists if payment made
-    if paid_amount > 0:
-        if not purchase_data.get("account_id"):
-            raise HTTPException(status_code=400, detail="account_id is required when paid_amount_money > 0")
-        account = await db.accounts.find_one({"id": purchase_data["account_id"], "is_deleted": False})
-        if not account:
-            raise HTTPException(status_code=404, detail="Payment account not found")
-    
-    # Round gold settlement fields to 3 decimals
-    if purchase_data.get("advance_in_gold_grams") is not None:
-        purchase_data["advance_in_gold_grams"] = round(float(purchase_data["advance_in_gold_grams"]), 3)
-    if purchase_data.get("exchange_in_gold_grams") is not None:
-        purchase_data["exchange_in_gold_grams"] = round(float(purchase_data["exchange_in_gold_grams"]), 3)
-    
     # ========== SET CALCULATED VALUES ==========
     purchase_data["items"] = validated_items
     purchase_data["conversion_factor"] = conversion_factor
