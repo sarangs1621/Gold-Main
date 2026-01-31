@@ -5638,19 +5638,24 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                             {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
                         )
                 
-                # CRITICAL: ALWAYS create Stock OUT movement for audit trail
+                # MODULE 7: ALWAYS create Stock OUT movement for audit trail
                 # Even if no inventory header exists, the movement must be recorded
+                # CRITICAL: Use new MODULE 7 structure
                 movement = StockMovement(
-                    movement_type="Stock OUT",
+                    movement_type="OUT",  # MODULE 7: Simplified taxonomy
+                    source_type="SALE",  # MODULE 7: Source tracking
+                    source_id=invoice.id,  # MODULE 7: Link to invoice
                     header_id=header_id_for_movement,  # May be None if no header found
                     header_name=header_name_for_movement,
-                    description=f"Invoice {invoice.invoice_number} - Finalized",
+                    description=f"Sale - Invoice {invoice.invoice_number}",
+                    weight=Decimal(str(item.weight)).quantize(Decimal('0.001')),  # MODULE 7: Decimal precision
+                    purity=item.purity,
+                    created_by=current_user.id,
+                    # Legacy fields for backward compatibility
                     qty_delta=-item.qty,
                     weight_delta=-item.weight,
-                    purity=item.purity,
                     reference_type="invoice",
-                    reference_id=invoice.id,
-                    created_by=current_user.id
+                    reference_id=invoice.id
                 )
                 await db.stock_movements.insert_one(movement.model_dump())
         
