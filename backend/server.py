@@ -3843,11 +3843,13 @@ async def add_payment_to_purchase(
     existing_txns = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{current_year}-"}})
     payment_txn_number = f"TXN-{current_year}-{existing_txns + 1:04d}"
     
-    # Create CREDIT transaction (money OUT from cash/bank for purchase payment)
+    # MODULE 5: Create DEBIT transaction (reduces vendor payable liability)
+    # CRITICAL: DEBIT type represents reduction of vendor payable
+    # Money flows: Cash/Bank OUT → Vendor Payable DOWN
     payment_transaction = Transaction(
         transaction_number=payment_txn_number,
         date=datetime.now(timezone.utc),
-        transaction_type="credit",
+        transaction_type="debit",  # MODULE 5: DEBIT reduces vendor payable
         mode=payment_mode,
         account_id=account_id,
         account_name=account["name"],
@@ -3862,7 +3864,7 @@ async def add_payment_to_purchase(
     )
     await db.transactions.insert_one(payment_transaction.model_dump())
     
-    # Update account balance (CREDIT = money OUT)
+    # Update account balance (money OUT from cash/bank)
     delta = -payment_amount
     await db.accounts.update_one(
         {"id": account_id},
