@@ -4795,6 +4795,170 @@ async def delete_jobcard_template(template_id: str, current_user: User = Depends
     
     return {"message": "Template deleted successfully"}
 
+# ============================================================================
+# WORK TYPES API (MODULE 2 - Master Data)
+# ============================================================================
+
+@api_router.get("/worktypes")
+async def get_worktypes(
+    include_inactive: bool = False,
+    current_user: User = Depends(require_permission('worktypes.view'))
+):
+    """
+    Get work types for job cards.
+    By default returns only active work types.
+    Set include_inactive=true to get all work types (for admin management).
+    """
+    query = {"is_deleted": False}
+    if not include_inactive:
+        query["is_active"] = True
+    
+    worktypes = await db.worktypes.find(query).sort("name", 1).to_list(None)
+    
+    # Convert datetime to ISO string
+    for wt in worktypes:
+        if "_id" in wt:
+            del wt["_id"]
+        wt["created_at"] = wt["created_at"].isoformat() if wt.get("created_at") else None
+        wt["updated_at"] = wt["updated_at"].isoformat() if wt.get("updated_at") else None
+    
+    return {"worktypes": worktypes}
+
+@api_router.post("/worktypes", status_code=201)
+async def create_worktype(
+    worktype_data: dict,
+    current_user: User = Depends(require_permission('worktypes.manage'))
+):
+    """Create a new work type"""
+    # Validate required fields
+    if not worktype_data.get("name") or not worktype_data["name"].strip():
+        raise HTTPException(status_code=400, detail="Work type name is required")
+    
+    name = worktype_data["name"].strip()
+    
+    # Check for duplicate name (case-insensitive)
+    existing = await db.worktypes.find_one({
+        "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
+        "is_deleted": False
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Work type '{name}' already exists")
+    
+    # Create WorkType instance
+    worktype = WorkType(
+        name=name,
+        is_active=worktype_data.get("is_active", True),
+        created_by=current_user.username
+    )
+    
+    # Insert into database
+    await db.worktypes.insert_one(worktype.model_dump())
+    
+    # Create audit log
+    await create_audit_log(
+        current_user.id,
+        current_user.full_name,
+        "worktype",
+        worktype.id,
+        "create",
+        {"name": name}
+    )
+    
+    return {
+        "message": "Work type created successfully",
+        "id": worktype.id,
+        "name": worktype.name
+    }
+
+@api_router.patch("/worktypes/{worktype_id}")
+async def update_worktype(
+    worktype_id: str,
+    update_data: dict,
+    current_user: User = Depends(require_permission('worktypes.manage'))
+):
+    """Update an existing work type"""
+    # Check if work type exists
+    existing = await db.worktypes.find_one({"id": worktype_id, "is_deleted": False})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Work type not found")
+    
+    # Prevent changing certain fields
+    protected_fields = ["id", "created_by", "created_at", "is_deleted"]
+    for field in protected_fields:
+        if field in update_data:
+            del update_data[field]
+    
+    # Set updated timestamp
+    update_data["updated_at"] = datetime.now(timezone.utc)
+    
+    # Validate name if being updated
+    if "name" in update_data:
+        name = update_data["name"].strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Work type name cannot be empty")
+        
+        # Check for duplicate name (excluding current work type)
+        duplicate = await db.worktypes.find_one({
+            "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
+            "is_deleted": False,
+            "id": {"$ne": worktype_id}
+        })
+        if duplicate:
+            raise HTTPException(status_code=400, detail=f"Work type '{name}' already exists")
+        
+        update_data["name"] = name
+    
+    # Update the work type
+    await db.worktypes.update_one({"id": worktype_id}, {"$set": update_data})
+    
+    # Create audit log
+    await create_audit_log(
+        current_user.id,
+        current_user.full_name,
+        "worktype",
+        worktype_id,
+        "update",
+        update_data
+    )
+    
+    return {"message": "Work type updated successfully"}
+
+@api_router.delete("/worktypes/{worktype_id}")
+async def deactivate_worktype(
+    worktype_id: str,
+    current_user: User = Depends(require_permission('worktypes.manage'))
+):
+    """
+    Deactivate a work type (soft delete).
+    Deactivated work types won't appear in new job card dropdowns,
+    but remain visible in existing job cards.
+    """
+    # Check if work type exists
+    existing = await db.worktypes.find_one({"id": worktype_id, "is_deleted": False})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Work type not found")
+    
+    # Deactivate the work type (not hard delete)
+    await db.worktypes.update_one(
+        {"id": worktype_id},
+        {"$set": {
+            "is_active": False,
+            "updated_at": datetime.now(timezone.utc)
+        }}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        current_user.id,
+        current_user.full_name,
+        "worktype",
+        worktype_id,
+        "deactivate",
+        {"name": existing.get("name")}
+    )
+    
+    return {"message": "Work type deactivated successfully"}
+
 @api_router.get("/invoices")
 @limiter.limit("1000/hour")  # General authenticated rate limit: 1000 requests per hour
 async def get_invoices(
