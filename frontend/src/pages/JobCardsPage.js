@@ -1760,6 +1760,84 @@ export default function JobCardsPage() {
               <p className="text-xs text-gray-500">Optional: Enter discount amount to be applied before VAT calculation</p>
             </div>
 
+            {/* MODULE 3: Advance Gold Section */}
+            <div className="space-y-3 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold text-yellow-900">💰 Advance Gold (Optional)</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const showGold = !convertData.show_gold_section;
+                    setConvertData({
+                      ...convertData, 
+                      show_gold_section: showGold,
+                      // Reset gold fields when hiding
+                      gold_weight: showGold ? convertData.gold_weight : '',
+                      gold_purity: showGold ? (convertData.gold_purity || '916') : '',
+                      gold_rate_per_gram: showGold ? convertData.gold_rate_per_gram : '',
+                    });
+                  }}
+                  className="text-xs text-yellow-700 hover:text-yellow-900 font-medium"
+                >
+                  {convertData.show_gold_section ? '✕ Hide' : '+ Add Gold'}
+                </button>
+              </div>
+              
+              {convertData.show_gold_section && (
+                <>
+                  <p className="text-xs text-yellow-700">Customer provides gold upfront, reducing the invoice amount</p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Gold Weight (grams)</Label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={convertData.gold_weight || ''}
+                        onChange={(e) => setConvertData({...convertData, gold_weight: e.target.value})}
+                        placeholder="0.000"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Purity</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="999"
+                        value={convertData.gold_purity || '916'}
+                        onChange={(e) => setConvertData({...convertData, gold_purity: e.target.value})}
+                        placeholder="916"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Rate per Gram (OMR)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={convertData.gold_rate_per_gram || ''}
+                      onChange={(e) => setConvertData({...convertData, gold_rate_per_gram: e.target.value})}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  
+                  {/* Show calculated gold value */}
+                  {convertData.gold_weight && convertData.gold_rate_per_gram && (
+                    <div className="p-2 bg-yellow-100 rounded text-sm">
+                      <span className="font-semibold text-yellow-900">Gold Value: </span>
+                      <span className="font-mono text-yellow-800">
+                        {(parseFloat(convertData.gold_weight) * parseFloat(convertData.gold_rate_per_gram)).toFixed(2)} OMR
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Action Buttons */}
             <div className="flex gap-3">
               <Button
