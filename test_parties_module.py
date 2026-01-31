@@ -240,6 +240,8 @@ def test_customer_id_validation(token):
     """Test Case: Customer ID validation (numeric only)"""
     print_section("TEST VALIDATION: Customer ID must be numeric only")
     
+    import time
+    
     invalid_ids = [
         ("ABC123", "Contains letters"),
         ("123-456", "Contains dash"),
@@ -248,10 +250,11 @@ def test_customer_id_validation(token):
     ]
     
     all_passed = True
-    for invalid_id, reason in invalid_ids:
+    for idx, (invalid_id, reason) in enumerate(invalid_ids):
+        unique_suffix = str(int(time.time()) + idx)[-8:]
         party_data = {
             "name": f"Test Invalid ID {invalid_id}",
-            "phone": "5555555555",
+            "phone": f"93{unique_suffix}",
             "party_type": "customer",
             "customer_id": invalid_id
         }
