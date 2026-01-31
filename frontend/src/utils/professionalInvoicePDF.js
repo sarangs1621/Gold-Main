@@ -307,6 +307,36 @@ export const generateProfessionalInvoicePDF = (invoiceData, shopSettings, paymen
       doc.text(`${roundOff > 0 ? '+' : ''}${roundOff.toFixed(3)} OMR`, rightCol, currentY, { align: 'right' });
     }
     
+    // MODULE 3: Advance Gold Section (if present)
+    const hasAdvanceGold = invoice.gold_weight && invoice.gold_weight > 0;
+    if (hasAdvanceGold) {
+      currentY += 10;
+      doc.setFillColor(255, 243, 205);
+      doc.rect(leftCol - 2, currentY - 6, 182, 24, 'F');
+      
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(180, 100, 0);
+      doc.text('💰 ADVANCE GOLD RECEIVED:', leftCol + 3, currentY);
+      doc.setTextColor(0, 0, 0);
+      
+      // Gold details
+      currentY += 5;
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Weight: ${(invoice.gold_weight || 0).toFixed(3)}g | Purity: ${invoice.gold_purity || 916}K | Rate: ${(invoice.gold_rate_per_gram || 0).toFixed(2)} OMR/g`, leftCol + 5, currentY);
+      
+      currentY += 5;
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.text('Gold Value:', leftCol + 5, currentY);
+      doc.setTextColor(180, 100, 0);
+      doc.text(`-${(invoice.gold_value || 0).toFixed(3)} OMR`, rightCol, currentY, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      
+      currentY += 2;
+    }
+    
     // Grand Total - Highlighted
     currentY += 10;
     doc.setFillColor(41, 128, 185);
@@ -318,6 +348,25 @@ export const generateProfessionalInvoicePDF = (invoiceData, shopSettings, paymen
     doc.text('GRAND TOTAL:', leftCol + 3, currentY);
     doc.text(`${(invoice.grand_total || 0).toFixed(3)} OMR`, rightCol - 3, currentY, { align: 'right' });
     doc.setTextColor(0, 0, 0);
+    
+    // MODULE 3: Show Adjusted Total (if gold present)
+    if (hasAdvanceGold) {
+      currentY += 8;
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      const adjustedTotal = (invoice.grand_total || 0) - (invoice.gold_value || 0);
+      
+      if (adjustedTotal >= 0) {
+        doc.text('AMOUNT PAYABLE (after gold):', leftCol, currentY);
+        doc.setTextColor(0, 100, 200);
+        doc.text(`${adjustedTotal.toFixed(3)} OMR`, rightCol, currentY, { align: 'right' });
+      } else {
+        doc.text('SHOP OWES CUSTOMER:', leftCol, currentY);
+        doc.setTextColor(200, 0, 0);
+        doc.text(`${Math.abs(adjustedTotal).toFixed(3)} OMR`, rightCol, currentY, { align: 'right' });
+      }
+      doc.setTextColor(0, 0, 0);
+    }
     
     currentY += 8;
     doc.setFontSize(8);
