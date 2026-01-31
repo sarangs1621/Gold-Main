@@ -424,6 +424,80 @@ export default function PurchasesPage() {
     }
   };
 
+  // MODULE 5: Payment handlers
+  const handleOpenPaymentDialog = async (purchase) => {
+    setPaymentPurchase(purchase);
+    setPaymentData({
+      payment_amount: '',
+      payment_mode: 'Cash',
+      account_id: '',
+      reference: '',
+      notes: ''
+    });
+    setPaymentErrors({});
+    await loadAccounts();
+    setShowPaymentDialog(true);
+  };
+
+  const validatePaymentData = () => {
+    const errors = {};
+    
+    if (!paymentData.payment_amount || parseFloat(paymentData.payment_amount) <= 0) {
+      errors.payment_amount = 'Payment amount must be greater than 0';
+    }
+    
+    if (paymentPurchase && parseFloat(paymentData.payment_amount) > paymentPurchase.balance_due_money) {
+      errors.payment_amount = `Payment cannot exceed balance due (${safeToFixed(paymentPurchase.balance_due_money, 2)} OMR)`;
+    }
+    
+    if (!paymentData.payment_mode) {
+      errors.payment_mode = 'Payment mode is required';
+    }
+    
+    if (!paymentData.account_id) {
+      errors.account_id = 'Payment account is required';
+    }
+    
+    setPaymentErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddPayment = async () => {
+    if (!validatePaymentData()) {
+      return;
+    }
+
+    setIsAddingPayment(true);
+    try {
+      const response = await API.post(`/api/purchases/${paymentPurchase.id}/add-payment`, {
+        payment_amount: parseFloat(paymentData.payment_amount),
+        payment_mode: paymentData.payment_mode,
+        account_id: paymentData.account_id,
+        reference: paymentData.reference,
+        notes: paymentData.notes
+      });
+
+      toast.success('Payment added successfully');
+      setShowPaymentDialog(false);
+      setPaymentPurchase(null);
+      
+      // Reload purchases to show updated data
+      await loadPurchases();
+      
+      // If viewing this purchase, update the view
+      if (viewPurchase && viewPurchase.id === paymentPurchase.id) {
+        const updatedPurchase = response.data.purchase;
+        setViewPurchase(updatedPurchase);
+      }
+    } catch (error) {
+      console.error('Error adding payment:', error);
+      const errorMsg = extractErrorMessage(error, 'Failed to add payment');
+      toast.error(errorMsg);
+    } finally {
+      setIsAddingPayment(false);
+    }
+  };
+
   const handleViewPurchase = (purchase) => {
     setViewPurchase(purchase);
     setShowViewDialog(true);
