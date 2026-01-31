@@ -15,7 +15,9 @@ import {
   History,
   ShoppingCart,
   UserCog,
-  RotateCcw
+  RotateCcw,
+  TrendingUp,
+  Shield
 } from 'lucide-react';
 
 const allNavItems = [
