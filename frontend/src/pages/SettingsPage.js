@@ -243,6 +243,11 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* MODULE 2: Work Types Management */}
+      {user?.role === 'admin' || user?.role === 'manager' ? (
+        <WorkTypesManagement />
+      ) : null}
+
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
