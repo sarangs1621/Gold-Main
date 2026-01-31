@@ -138,11 +138,21 @@ export default function PartiesPage() {
     setValidationErrors({...validationErrors, phone: error});
   };
   
+  // Handle customer_id change with validation
+  const handleCustomerIdChange = (e) => {
+    const value = e.target.value;
+    setFormData({...formData, customer_id: value});
+    
+    const error = validateCustomerId(value);
+    setValidationErrors({...validationErrors, customer_id: error});
+  };
+  
   // Check if form is valid
   const isFormValid = () => {
     const nameError = validateName(formData.name);
     const phoneError = validatePhone(formData.phone);
-    return !nameError && !phoneError;
+    const customerIdError = validateCustomerId(formData.customer_id);
+    return !nameError && !phoneError && !customerIdError;
   };
 
   const loadParties = async () => {
