@@ -124,6 +124,7 @@ class PartyValidator(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     party_type: str = Field(..., pattern="^(customer|vendor|worker)$")
     notes: Optional[str] = Field(None, max_length=1000)
+    customer_id: Optional[str] = Field(None, max_length=50)
     
     @validator('name')
     def sanitize_name(cls, v):
@@ -144,6 +145,20 @@ class PartyValidator(BaseModel):
     @validator('notes')
     def sanitize_notes(cls, v):
         return sanitize_text_field(v, max_length=1000)
+    
+    @validator('customer_id')
+    def validate_customer_id(cls, v):
+        if v:
+            # Remove HTML tags first
+            v = sanitize_html(v)
+            # Trim whitespace
+            v = v.strip() if v else None
+            
+            if v:
+                # Must be numeric only (digits 0-9), no formatting, allow leading zeros
+                if not re.match(r'^\d+$', v):
+                    raise ValueError('Customer ID must contain only digits (0-9)')
+        return v if v else None
 
 class StockMovementValidator(BaseModel):
     movement_type: str = Field(..., pattern="^(Stock IN|Stock OUT|Adjustment IN|Adjustment OUT|Transfer)$")
