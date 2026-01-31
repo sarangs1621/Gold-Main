@@ -4318,21 +4318,25 @@ async def finalize_purchase(purchase_id: str, current_user: User = Depends(requi
         )
         await db.inventory_headers.insert_one(header.model_dump())
     
-    # Create Stock IN movement for each item
+    # MODULE 7: Create Stock IN movement for each item with new structure
     for item in purchase.items:
         movement = StockMovement(
             date=purchase.date,
-            movement_type="Stock IN",
+            movement_type="IN",  # MODULE 7: Simplified taxonomy
+            source_type="PURCHASE",  # MODULE 7: Source tracking
+            source_id=purchase_id,  # MODULE 7: Link to purchase
             header_id=header.get("id") if isinstance(header, dict) else header.id,
             header_name=header_name,
             description=f"Purchase from {vendor_name}: {item.description}",
+            weight=Decimal(str(item.weight_grams)).quantize(Decimal('0.001')),  # MODULE 7: Decimal precision
+            purity=purity,
+            created_by=current_user.username,
+            notes=f"Entered purity: {item.entered_purity}, Valuation purity: {purity}, Conversion factor: {purchase.conversion_factor}",
+            # Legacy fields for backward compatibility
             qty_delta=1,
             weight_delta=item.weight_grams,
-            purity=purity,
             reference_type="purchase",
-            reference_id=purchase_id,
-            created_by=current_user.username,
-            notes=f"Entered purity: {item.entered_purity}, Valuation purity: {purity}, Conversion factor: {purchase.conversion_factor}"
+            reference_id=purchase_id
         )
         await db.stock_movements.insert_one(movement.model_dump())
     
