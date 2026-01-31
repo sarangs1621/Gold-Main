@@ -19,7 +19,7 @@ from decimal import Decimal, ROUND_HALF_UP
 # Configuration
 BASE_URL = "http://localhost:8001/api"
 TEST_USERNAME = "admin"
-TEST_PASSWORD = "Admin@123456"
+TEST_PASSWORD = "admin123"
 
 # Global token storage
 TOKEN = None
