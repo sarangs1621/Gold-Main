@@ -5510,9 +5510,11 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
         
         # Update invoice paid_amount and balance_due
         # Gold value counts as partial payment
-        adjusted_total = invoice.grand_total - gold_value
-        new_paid_amount = gold_value
-        new_balance_due = adjusted_total  # Can be negative if gold > grand_total
+        # Use Decimal for precise calculation
+        grand_total_decimal = Decimal(str(invoice.grand_total))
+        adjusted_total_decimal = grand_total_decimal - gold_value_decimal
+        new_paid_amount = float(gold_value_decimal)
+        new_balance_due = float(adjusted_total_decimal)  # Can be negative if gold > grand_total
         
         await db.invoices.update_one(
             {"id": invoice_id},
