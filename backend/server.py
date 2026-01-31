@@ -10839,8 +10839,1124 @@ async def export_returns_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+# ============================================================================
+# MODULE 8: LEDGER-BASED REPORTS (TRUTH-ONLY)
+# ============================================================================
+# 
+# CRITICAL RULES:
+# - ALL reports read ONLY from ledgers (StockMovements, Transactions, GoldLedger)
+# - NEVER derive totals from documents (Invoices, Purchases, Returns)
+# - Server-side filtering MANDATORY (no client-side filtering)
+# - Use Decimal (NO floats) for all calculations
+# - Every row must be traceable to ledger entry (id + source_type + source_id)
+# - Pagination applied AFTER filtering
+# 
+# Report Categories:
+# 1. INVENTORY REPORTS → StockMovements ledger only
+# 2. FINANCE REPORTS → Transactions ledger only
+# 3. GOLD REPORTS → GoldLedger only
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# INVENTORY REPORTS (StockMovements Ledger Only)
+# ----------------------------------------------------------------------------
+
+@api_router.get("/reports/ledger/stock-movements")
+async def get_stock_movements_ledger(
+    page: int = 1,
+    page_size: int = 50,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    movement_type: Optional[str] = None,  # IN | OUT | ADJUSTMENT
+    source_type: Optional[str] = None,  # SALE | PURCHASE | MANUAL
+    header_id: Optional[str] = None,
+    purity: Optional[int] = None,
+    current_user: User = Depends(require_permission('reports.inventory.view'))
+):
+    """
+    MODULE 8: Stock Movements Ledger Report (INVENTORY TRUTH)
+    
+    Returns detailed stock movement log from StockMovements ledger ONLY.
+    Every entry includes traceability: ledger_entry_id + source_type + source_id
+    
+    Default Date Range: Current month (first day to today)
+    
+    Filters (ALL SERVER-SIDE):
+    - date_from, date_to: Date range
+    - movement_type: IN, OUT, ADJUSTMENT
+    - source_type: SALE, PURCHASE, MANUAL
+    - header_id: Specific inventory item
+    - purity: Gold purity filter
+    
+    Returns:
+    - movements: List of stock movements with traceability
+    - summary: Period totals (IN, OUT, NET)
+    - pagination: Page metadata
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query (SERVER-SIDE FILTERING)
+    query = {"is_deleted": False}
+    
+    # Date filter
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Movement type filter
+    if movement_type:
+        query['movement_type'] = movement_type.upper()
+    
+    # Source type filter
+    if source_type:
+        query['source_type'] = source_type.upper()
+    
+    # Header ID filter
+    if header_id:
+        query['header_id'] = header_id
+    
+    # Purity filter
+    if purity:
+        query['purity'] = purity
+    
+    # Get total count for pagination
+    total_count = await db.stock_movements.count_documents(query)
+    
+    # Calculate pagination
+    skip = (page - 1) * page_size
+    total_pages = (total_count + page_size - 1) // page_size
+    
+    # Fetch movements with pagination (AFTER filtering)
+    movements_cursor = db.stock_movements.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
+    movements = await movements_cursor.to_list(page_size)
+    
+    # Convert Decimal128 to float for JSON serialization
+    for movement in movements:
+        if 'weight' in movement and isinstance(movement['weight'], Decimal128):
+            movement['weight'] = float(movement['weight'].to_decimal())
+    
+    # Calculate summary from FULL filtered dataset (not just current page)
+    all_movements = await db.stock_movements.find(query, {"_id": 0, "movement_type": 1, "weight": 1}).to_list(10000)
+    
+    # Use Decimal for calculations (NO FLOATS)
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    
+    for m in all_movements:
+        weight = m.get('weight', Decimal('0.000'))
+        if isinstance(weight, Decimal128):
+            weight = weight.to_decimal()
+        elif not isinstance(weight, Decimal):
+            weight = Decimal(str(weight))
+        
+        movement_type = m.get('movement_type', '')
+        if movement_type == 'IN':
+            total_in += weight
+        elif movement_type == 'OUT':
+            total_out += weight
+        elif movement_type == 'ADJUSTMENT':
+            # Adjustments can be positive or negative
+            if weight >= 0:
+                total_in += weight
+            else:
+                total_out += abs(weight)
+    
+    net_weight = total_in - total_out
+    
+    return {
+        "movements": movements,
+        "summary": {
+            "total_in": float(total_in),
+            "total_out": float(total_out),
+            "net_weight": float(net_weight),
+            "count": len(all_movements)
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "movement_type": movement_type,
+            "source_type": source_type,
+            "header_id": header_id,
+            "purity": purity
+        }
+    }
 
 
+@api_router.get("/reports/ledger/stock-summary")
+async def get_stock_summary_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    purity: Optional[int] = None,
+    current_user: User = Depends(require_permission('reports.inventory.view'))
+):
+    """
+    MODULE 8: Current Stock Summary (INVENTORY TRUTH)
+    
+    Calculates current stock from StockMovements ledger ONLY.
+    Formula: Opening Stock + SUM(IN) - SUM(OUT) ± SUM(ADJUSTMENTS) = Closing Stock
+    
+    Groups by: header_id + purity
+    
+    Returns stock levels with full traceability to StockMovements.
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    if purity:
+        query['purity'] = purity
+    
+    # Fetch all movements
+    movements = await db.stock_movements.find(query, {"_id": 0}).to_list(10000)
+    
+    # Group by header_id and purity
+    stock_by_item = {}
+    
+    for m in movements:
+        header_id = m.get('header_id', 'unknown')
+        header_name = m.get('header_name', 'Unknown Item')
+        item_purity = m.get('purity', 0)
+        movement_type = m.get('movement_type', '')
+        
+        key = f"{header_id}_{item_purity}"
+        
+        if key not in stock_by_item:
+            stock_by_item[key] = {
+                'header_id': header_id,
+                'header_name': header_name,
+                'purity': item_purity,
+                'weight_in': Decimal('0.000'),
+                'weight_out': Decimal('0.000'),
+                'adjustments': Decimal('0.000'),
+                'current_stock': Decimal('0.000')
+            }
+        
+        weight = m.get('weight', Decimal('0.000'))
+        if isinstance(weight, Decimal128):
+            weight = weight.to_decimal()
+        elif not isinstance(weight, Decimal):
+            weight = Decimal(str(weight))
+        
+        if movement_type == 'IN':
+            stock_by_item[key]['weight_in'] += weight
+        elif movement_type == 'OUT':
+            stock_by_item[key]['weight_out'] += weight
+        elif movement_type == 'ADJUSTMENT':
+            stock_by_item[key]['adjustments'] += weight
+    
+    # Calculate current stock for each item
+    stock_list = []
+    for key, item in stock_by_item.items():
+        item['current_stock'] = item['weight_in'] - item['weight_out'] + item['adjustments']
+        
+        # Convert Decimal to float for JSON
+        stock_list.append({
+            'header_id': item['header_id'],
+            'header_name': item['header_name'],
+            'purity': item['purity'],
+            'weight_in': float(item['weight_in']),
+            'weight_out': float(item['weight_out']),
+            'adjustments': float(item['adjustments']),
+            'current_stock': float(item['current_stock'])
+        })
+    
+    # Sort by current stock descending
+    stock_list.sort(key=lambda x: x['current_stock'], reverse=True)
+    
+    return {
+        "stock_items": stock_list,
+        "count": len(stock_list),
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "purity": purity
+        }
+    }
+
+
+@api_router.get("/reports/ledger/manual-adjustments")
+async def get_manual_adjustments_ledger(
+    page: int = 1,
+    page_size: int = 50,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.inventory.view'))
+):
+    """
+    MODULE 8: Manual Inventory Adjustments Log (AUDIT TRAIL)
+    
+    Returns ONLY manual adjustments from StockMovements ledger.
+    Filtered by: source_type = 'MANUAL'
+    
+    Every adjustment includes:
+    - Ledger entry ID (traceability)
+    - audit_reference (reason for adjustment)
+    - created_by (who made the adjustment)
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query - ONLY manual adjustments
+    query = {
+        "is_deleted": False,
+        "source_type": "MANUAL"
+    }
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Get total count
+    total_count = await db.stock_movements.count_documents(query)
+    
+    # Pagination
+    skip = (page - 1) * page_size
+    total_pages = (total_count + page_size - 1) // page_size
+    
+    # Fetch adjustments
+    adjustments_cursor = db.stock_movements.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
+    adjustments = await adjustments_cursor.to_list(page_size)
+    
+    # Convert Decimal128
+    for adj in adjustments:
+        if 'weight' in adj and isinstance(adj['weight'], Decimal128):
+            adj['weight'] = float(adj['weight'].to_decimal())
+    
+    return {
+        "adjustments": adjustments,
+        "count": total_count,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
+
+
+# ----------------------------------------------------------------------------
+# FINANCE REPORTS (Transactions Ledger Only)
+# ----------------------------------------------------------------------------
+
+@api_router.get("/reports/ledger/transactions")
+async def get_transactions_ledger(
+    page: int = 1,
+    page_size: int = 50,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    transaction_type: Optional[str] = None,  # credit | debit
+    account_id: Optional[str] = None,
+    party_id: Optional[str] = None,
+    mode: Optional[str] = None,  # Cash | Bank Transfer | etc.
+    category: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """
+    MODULE 8: Full Transaction Ledger (FINANCE TRUTH)
+    
+    Returns complete transaction log from Transactions ledger ONLY.
+    Every entry includes traceability: transaction_id + reference_type + reference_id
+    
+    Default Date Range: Current month
+    
+    Filters (ALL SERVER-SIDE):
+    - date_from, date_to: Date range
+    - transaction_type: credit | debit
+    - account_id: Specific account
+    - party_id: Specific party
+    - mode: Payment mode
+    - category: Transaction category
+    
+    Returns:
+    - transactions: List with full traceability
+    - summary: Total Credit, Total Debit, Net Flow
+    - pagination: Page metadata
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    if transaction_type:
+        query['transaction_type'] = transaction_type.lower()
+    
+    if account_id:
+        query['account_id'] = account_id
+    
+    if party_id:
+        query['party_id'] = party_id
+    
+    if mode:
+        query['mode'] = mode
+    
+    if category:
+        query['category'] = category
+    
+    # Get total count
+    total_count = await db.transactions.count_documents(query)
+    
+    # Pagination
+    skip = (page - 1) * page_size
+    total_pages = (total_count + page_size - 1) // page_size
+    
+    # Fetch transactions
+    transactions_cursor = db.transactions.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
+    transactions = await transactions_cursor.to_list(page_size)
+    
+    # Calculate summary from FULL filtered dataset
+    all_transactions = await db.transactions.find(query, {"_id": 0, "transaction_type": 1, "amount": 1}).to_list(10000)
+    
+    # Use Decimal for calculations
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    
+    for txn in all_transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        if txn.get('transaction_type') == 'credit':
+            total_credit += amount
+        elif txn.get('transaction_type') == 'debit':
+            total_debit += amount
+    
+    net_flow = total_credit - total_debit
+    
+    return {
+        "transactions": transactions,
+        "summary": {
+            "total_credit": float(total_credit),
+            "total_debit": float(total_debit),
+            "net_flow": float(net_flow),
+            "count": len(all_transactions)
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "transaction_type": transaction_type,
+            "account_id": account_id,
+            "party_id": party_id,
+            "mode": mode,
+            "category": category
+        }
+    }
+
+
+@api_router.get("/reports/ledger/cash-flow")
+async def get_cash_flow_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """
+    MODULE 8: Cash Account Flow (FINANCE TRUTH)
+    
+    Returns transactions for CASH accounts ONLY from Transactions ledger.
+    Calculates: Opening Balance + Credits - Debits = Closing Balance
+    
+    Source: Transactions ledger where account has 'cash' in name (case-insensitive)
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Get all cash accounts
+    accounts = await db.accounts.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
+    cash_accounts = [acc for acc in accounts if 'cash' in acc.get('name', '').lower()]
+    cash_account_ids = [acc['id'] for acc in cash_accounts]
+    
+    if not cash_account_ids:
+        return {
+            "cash_flow": [],
+            "summary": {
+                "opening_balance": 0.0,
+                "total_credit": 0.0,
+                "total_debit": 0.0,
+                "closing_balance": 0.0
+            },
+            "filters_applied": {
+                "date_from": date_from,
+                "date_to": date_to
+            }
+        }
+    
+    # Build query for cash transactions
+    query = {
+        "is_deleted": False,
+        "account_id": {"$in": cash_account_ids}
+    }
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Fetch cash transactions
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
+    
+    # Calculate totals
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    
+    for txn in transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        if txn.get('transaction_type') == 'credit':
+            total_credit += amount
+        elif txn.get('transaction_type') == 'debit':
+            total_debit += amount
+    
+    # Get current cash balance from accounts
+    current_balance = sum(Decimal(str(acc.get('current_balance', 0))) for acc in cash_accounts)
+    
+    # Calculate opening balance (working backwards)
+    closing_balance = current_balance
+    opening_balance = closing_balance - total_credit + total_debit
+    
+    return {
+        "cash_flow": transactions,
+        "cash_accounts": cash_accounts,
+        "summary": {
+            "opening_balance": float(opening_balance),
+            "total_credit": float(total_credit),
+            "total_debit": float(total_debit),
+            "closing_balance": float(closing_balance),
+            "count": len(transactions)
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
+
+
+@api_router.get("/reports/ledger/bank-flow")
+async def get_bank_flow_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """
+    MODULE 8: Bank Account Flow (FINANCE TRUTH)
+    
+    Returns transactions for BANK accounts ONLY from Transactions ledger.
+    Calculates: Opening Balance + Credits - Debits = Closing Balance
+    
+    Source: Transactions ledger where account has 'bank' in name (case-insensitive)
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Get all bank accounts
+    accounts = await db.accounts.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
+    bank_accounts = [acc for acc in accounts if 'bank' in acc.get('name', '').lower()]
+    bank_account_ids = [acc['id'] for acc in bank_accounts]
+    
+    if not bank_account_ids:
+        return {
+            "bank_flow": [],
+            "summary": {
+                "opening_balance": 0.0,
+                "total_credit": 0.0,
+                "total_debit": 0.0,
+                "closing_balance": 0.0
+            },
+            "filters_applied": {
+                "date_from": date_from,
+                "date_to": date_to
+            }
+        }
+    
+    # Build query for bank transactions
+    query = {
+        "is_deleted": False,
+        "account_id": {"$in": bank_account_ids}
+    }
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Fetch bank transactions
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
+    
+    # Calculate totals
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    
+    for txn in transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        if txn.get('transaction_type') == 'credit':
+            total_credit += amount
+        elif txn.get('transaction_type') == 'debit':
+            total_debit += amount
+    
+    # Get current bank balance from accounts
+    current_balance = sum(Decimal(str(acc.get('current_balance', 0))) for acc in bank_accounts)
+    
+    # Calculate opening balance (working backwards)
+    closing_balance = current_balance
+    opening_balance = closing_balance - total_credit + total_debit
+    
+    return {
+        "bank_flow": transactions,
+        "bank_accounts": bank_accounts,
+        "summary": {
+            "opening_balance": float(opening_balance),
+            "total_credit": float(total_credit),
+            "total_debit": float(total_debit),
+            "closing_balance": float(closing_balance),
+            "count": len(transactions)
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
+
+
+@api_router.get("/reports/ledger/credit-debit-summary")
+async def get_credit_debit_summary_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """
+    MODULE 8: Credit/Debit Summary (FINANCE TRUTH)
+    
+    Period summary from Transactions ledger ONLY.
+    Formula: Net Flow = SUM(CREDIT) - SUM(DEBIT)
+    
+    Grouped by:
+    - Account type
+    - Payment mode
+    - Category
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Fetch all transactions in period
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(10000)
+    
+    # Get accounts for type mapping
+    accounts = await db.accounts.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
+    account_type_map = {acc['id']: acc.get('account_type', 'unknown') for acc in accounts}
+    
+    # Calculate overall totals
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    
+    # Group by account type
+    by_account_type = {}
+    # Group by mode
+    by_mode = {}
+    # Group by category
+    by_category = {}
+    
+    for txn in transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        txn_type = txn.get('transaction_type', '')
+        account_id = txn.get('account_id', '')
+        mode = txn.get('mode', 'Unknown')
+        category = txn.get('category', 'Uncategorized')
+        
+        # Overall totals
+        if txn_type == 'credit':
+            total_credit += amount
+        elif txn_type == 'debit':
+            total_debit += amount
+        
+        # By account type
+        acc_type = account_type_map.get(account_id, 'unknown')
+        if acc_type not in by_account_type:
+            by_account_type[acc_type] = {'credit': Decimal('0.00'), 'debit': Decimal('0.00')}
+        if txn_type == 'credit':
+            by_account_type[acc_type]['credit'] += amount
+        elif txn_type == 'debit':
+            by_account_type[acc_type]['debit'] += amount
+        
+        # By mode
+        if mode not in by_mode:
+            by_mode[mode] = {'credit': Decimal('0.00'), 'debit': Decimal('0.00')}
+        if txn_type == 'credit':
+            by_mode[mode]['credit'] += amount
+        elif txn_type == 'debit':
+            by_mode[mode]['debit'] += amount
+        
+        # By category
+        if category not in by_category:
+            by_category[category] = {'credit': Decimal('0.00'), 'debit': Decimal('0.00')}
+        if txn_type == 'credit':
+            by_category[category]['credit'] += amount
+        elif txn_type == 'debit':
+            by_category[category]['debit'] += amount
+    
+    # Convert to JSON-serializable format
+    account_type_summary = [
+        {
+            'account_type': acc_type,
+            'total_credit': float(data['credit']),
+            'total_debit': float(data['debit']),
+            'net_flow': float(data['credit'] - data['debit'])
+        }
+        for acc_type, data in by_account_type.items()
+    ]
+    
+    mode_summary = [
+        {
+            'mode': mode,
+            'total_credit': float(data['credit']),
+            'total_debit': float(data['debit']),
+            'net_flow': float(data['credit'] - data['debit'])
+        }
+        for mode, data in by_mode.items()
+    ]
+    
+    category_summary = [
+        {
+            'category': category,
+            'total_credit': float(data['credit']),
+            'total_debit': float(data['debit']),
+            'net_flow': float(data['credit'] - data['debit'])
+        }
+        for category, data in by_category.items()
+    ]
+    
+    net_flow = total_credit - total_debit
+    
+    return {
+        "overall_summary": {
+            "total_credit": float(total_credit),
+            "total_debit": float(total_debit),
+            "net_flow": float(net_flow),
+            "transaction_count": len(transactions)
+        },
+        "by_account_type": account_type_summary,
+        "by_mode": mode_summary,
+        "by_category": category_summary,
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
+
+
+# ----------------------------------------------------------------------------
+# GOLD REPORTS (GoldLedger Only)
+# ----------------------------------------------------------------------------
+
+@api_router.get("/reports/ledger/gold-movements")
+async def get_gold_movements_ledger(
+    page: int = 1,
+    page_size: int = 50,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    type: Optional[str] = None,  # IN | OUT
+    party_id: Optional[str] = None,
+    purpose: Optional[str] = None,  # job_work | exchange | advance_gold | adjustment
+    current_user: User = Depends(require_permission('reports.gold.view'))
+):
+    """
+    MODULE 8: Gold Movement Ledger (GOLD TRUTH)
+    
+    Returns gold movement log from GoldLedger ONLY.
+    Every entry includes traceability: entry_id + reference_type + reference_id
+    
+    Default Date Range: Current month
+    
+    Filters (ALL SERVER-SIDE):
+    - date_from, date_to: Date range
+    - type: IN | OUT
+    - party_id: Specific party
+    - purpose: job_work, exchange, advance_gold, adjustment
+    
+    Returns:
+    - movements: List with full traceability
+    - summary: Total IN, Total OUT, Net Gold
+    - pagination: Page metadata
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    if type:
+        query['type'] = type.upper()
+    
+    if party_id:
+        query['party_id'] = party_id
+    
+    if purpose:
+        query['purpose'] = purpose
+    
+    # Get total count
+    total_count = await db.gold_ledger.count_documents(query)
+    
+    # Pagination
+    skip = (page - 1) * page_size
+    total_pages = (total_count + page_size - 1) // page_size
+    
+    # Fetch gold movements
+    movements_cursor = db.gold_ledger.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
+    movements = await movements_cursor.to_list(page_size)
+    
+    # Calculate summary from FULL filtered dataset
+    all_movements = await db.gold_ledger.find(query, {"_id": 0, "type": 1, "weight_grams": 1}).to_list(10000)
+    
+    # Use Decimal for calculations
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    
+    for m in all_movements:
+        weight = Decimal(str(m.get('weight_grams', 0)))
+        if m.get('type') == 'IN':
+            total_in += weight
+        elif m.get('type') == 'OUT':
+            total_out += weight
+    
+    net_gold = total_in - total_out
+    
+    return {
+        "movements": movements,
+        "summary": {
+            "total_in": float(total_in),
+            "total_out": float(total_out),
+            "net_gold": float(net_gold),
+            "count": len(all_movements)
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        },
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "type": type,
+            "party_id": party_id,
+            "purpose": purpose
+        }
+    }
+
+
+@api_router.get("/reports/ledger/gold-party-balances")
+async def get_gold_party_balances_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.gold.view'))
+):
+    """
+    MODULE 8: Party-wise Gold Balances (GOLD TRUTH)
+    
+    Calculates gold balance per party from GoldLedger ONLY.
+    Formula: Party Balance = SUM(IN) - SUM(OUT) for each party
+    
+    IN = Shop receives gold from party
+    OUT = Shop gives gold to party
+    
+    Returns list of parties with their gold balances.
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Fetch all gold movements
+    movements = await db.gold_ledger.find(query, {"_id": 0}).to_list(10000)
+    
+    # Get parties for name mapping
+    parties = await db.parties.find({"is_deleted": False}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    party_name_map = {p['id']: p.get('name', 'Unknown') for p in parties}
+    
+    # Group by party
+    balances_by_party = {}
+    
+    for m in movements:
+        party_id = m.get('party_id')
+        if not party_id:
+            party_id = 'walk_in'
+            party_name = 'Walk-in Customers'
+        else:
+            party_name = party_name_map.get(party_id, 'Unknown Party')
+        
+        if party_id not in balances_by_party:
+            balances_by_party[party_id] = {
+                'party_id': party_id,
+                'party_name': party_name,
+                'gold_in': Decimal('0.000'),
+                'gold_out': Decimal('0.000'),
+                'balance': Decimal('0.000')
+            }
+        
+        weight = Decimal(str(m.get('weight_grams', 0)))
+        if m.get('type') == 'IN':
+            balances_by_party[party_id]['gold_in'] += weight
+        elif m.get('type') == 'OUT':
+            balances_by_party[party_id]['gold_out'] += weight
+    
+    # Calculate balances and convert to list
+    balances_list = []
+    for party_id, data in balances_by_party.items():
+        data['balance'] = data['gold_in'] - data['gold_out']
+        balances_list.append({
+            'party_id': data['party_id'],
+            'party_name': data['party_name'],
+            'gold_in': float(data['gold_in']),
+            'gold_out': float(data['gold_out']),
+            'balance': float(data['balance'])
+        })
+    
+    # Sort by balance descending
+    balances_list.sort(key=lambda x: x['balance'], reverse=True)
+    
+    return {
+        "party_balances": balances_list,
+        "count": len(balances_list),
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
+
+
+@api_router.get("/reports/ledger/gold-summary")
+async def get_gold_summary_ledger(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.gold.view'))
+):
+    """
+    MODULE 8: Gold Period Summary (GOLD TRUTH)
+    
+    Period summary from GoldLedger ONLY.
+    Grouped by:
+    - Type (IN/OUT)
+    - Purpose (job_work, exchange, advance_gold, adjustment)
+    - Purity
+    
+    Returns aggregated gold movement statistics.
+    """
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    # Fetch all movements
+    movements = await db.gold_ledger.find(query, {"_id": 0}).to_list(10000)
+    
+    # Calculate totals
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    
+    # Group by purpose
+    by_purpose = {}
+    # Group by purity
+    by_purity = {}
+    
+    for m in movements:
+        weight = Decimal(str(m.get('weight_grams', 0)))
+        movement_type = m.get('type', '')
+        purpose = m.get('purpose', 'Uncategorized')
+        purity = m.get('purity_entered', 0)
+        
+        # Overall totals
+        if movement_type == 'IN':
+            total_in += weight
+        elif movement_type == 'OUT':
+            total_out += weight
+        
+        # By purpose
+        if purpose not in by_purpose:
+            by_purpose[purpose] = {'in': Decimal('0.000'), 'out': Decimal('0.000')}
+        if movement_type == 'IN':
+            by_purpose[purpose]['in'] += weight
+        elif movement_type == 'OUT':
+            by_purpose[purpose]['out'] += weight
+        
+        # By purity
+        if purity not in by_purity:
+            by_purity[purity] = {'in': Decimal('0.000'), 'out': Decimal('0.000')}
+        if movement_type == 'IN':
+            by_purity[purity]['in'] += weight
+        elif movement_type == 'OUT':
+            by_purity[purity]['out'] += weight
+    
+    # Convert to JSON-serializable format
+    purpose_summary = [
+        {
+            'purpose': purpose,
+            'gold_in': float(data['in']),
+            'gold_out': float(data['out']),
+            'net': float(data['in'] - data['out'])
+        }
+        for purpose, data in by_purpose.items()
+    ]
+    
+    purity_summary = [
+        {
+            'purity': purity,
+            'gold_in': float(data['in']),
+            'gold_out': float(data['out']),
+            'net': float(data['in'] - data['out'])
+        }
+        for purity, data in by_purity.items()
+    ]
+    
+    net_gold = total_in - total_out
+    
+    return {
+        "overall_summary": {
+            "total_in": float(total_in),
+            "total_out": float(total_out),
+            "net_gold": float(net_gold),
+            "movement_count": len(movements)
+        },
+        "by_purpose": purpose_summary,
+        "by_purity": purity_summary,
+        "filters_applied": {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+    }
 
 
 # Health check endpoint (no authentication required)
