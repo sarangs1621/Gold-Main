@@ -6,17 +6,15 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
-import { Package, CheckCircle, Lock, Edit, ShoppingCart, Calendar, Trash2, Eye, AlertTriangle, DollarSign } from 'lucide-react';
+import { Package, CheckCircle, Lock, Edit, ShoppingCart, Calendar, Trash2, Eye, AlertTriangle, DollarSign, Plus, X } from 'lucide-react';
 import { extractErrorMessage } from '../utils/errorHandler';
 import { ConfirmationDialog } from '../components/ConfirmationDialog';
 import { 
   validateWeight, 
-  validateRate, 
   validateAmount, 
-  validatePaidAmount, 
   validatePurity,
   validateSelection 
 } from '../utils/validation';
@@ -32,7 +30,7 @@ export default function PurchasesPage() {
   const [purchases, setPurchases] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [vendors, setVendors] = useState([]);
-  const [accounts, setAccounts] = useState([]);
+  const [shopSettings, setShopSettings] = useState(null);
   const [showDialog, setShowDialog] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState(null);
   
@@ -44,15 +42,10 @@ export default function PurchasesPage() {
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [viewPurchase, setViewPurchase] = useState(null);
   
-  // Payment dialog state
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [selectedPurchase, setSelectedPurchase] = useState(null);
-  const [paymentData, setPaymentData] = useState({
-    payment_amount: '',
-    payment_mode: 'Cash',
-    account_id: '',
-    notes: ''
-  });
+  // Finalize dialog state
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
+  const [finalizingPurchase, setFinalizingPurchase] = useState(null);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   
   // Confirmation Dialogs
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -69,48 +62,45 @@ export default function PurchasesPage() {
   // Form validation errors
   const [errors, setErrors] = useState({});
 
+  // MODULE 4: Form data with vendor type, items array, and conversion factor
   const [formData, setFormData] = useState({
+    vendor_type: 'saved',
     vendor_party_id: '',
+    walk_in_name: '',
+    walk_in_customer_id: '',
     date: new Date().toISOString().split('T')[0],
     description: '',
-    weight_grams: '',
-    entered_purity: '999',
-    rate_per_gram: '',
-    amount_total: '',
-    // Payment fields
-    paid_amount_money: '0',
-    payment_mode: 'Cash',
-    account_id: '',
-    // Gold settlement fields
-    advance_in_gold_grams: '',
-    exchange_in_gold_grams: ''
+    conversion_factor: 0.920,
+    items: [
+      {
+        id: generateId(),
+        description: '',
+        weight_grams: '',
+        entered_purity: '999'
+      }
+    ]
   });
 
   // Get current page from URL, default to 1
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
 
-  // AUTO-CALCULATION: total_amount = weight × rate (SOURCE OF TRUTH)
-  useEffect(() => {
-    const weight = parseFloat(formData.weight_grams) || 0;
-    const rate = parseFloat(formData.rate_per_gram) || 0;
-    
-    if (weight > 0 && rate > 0) {
-      const calculatedTotal = (weight * rate).toFixed(2);
-      // Only update if different to avoid infinite loop
-      if (formData.amount_total !== calculatedTotal) {
-        setFormData(prev => ({
-          ...prev,
-          amount_total: calculatedTotal
-        }));
-      }
-    } else if (formData.amount_total !== '') {
-      // Clear total if weight or rate becomes invalid
-      setFormData(prev => ({
-        ...prev,
-        amount_total: ''
-      }));
-    }
-  }, [formData.weight_grams, formData.rate_per_gram]);
+  function generateId() {
+    return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Calculate 22K valuation for an item
+  const calculate22KAmount = (weight, conversionFactor) => {
+    if (!weight || weight <= 0 || !conversionFactor) return 0;
+    // Formula: amount = (weight × 916) ÷ conversion_factor
+    return (parseFloat(weight) * 916) / parseFloat(conversionFactor);
+  };
+
+  // Calculate total amount from all items
+  const calculateTotalAmount = (items, conversionFactor) => {
+    return items.reduce((sum, item) => {
+      return sum + calculate22KAmount(item.weight_grams, conversionFactor);
+    }, 0);
+  };
 
   useEffect(() => {
     loadInitialData();
@@ -122,7 +112,7 @@ export default function PurchasesPage() {
       await Promise.all([
         loadPurchases(),
         loadVendors(),
-        loadAccounts()
+        loadShopSettings()
       ]);
     } catch (error) {
       console.error('Error loading initial data:', error);
@@ -158,12 +148,17 @@ export default function PurchasesPage() {
     }
   };
 
-  const loadAccounts = async () => {
+  const loadShopSettings = async () => {
     try {
-      const response = await API.get(`/api/accounts`);
-      setAccounts(response.data);
+      const response = await API.get(`/api/settings/shop`);
+      setShopSettings(response.data);
     } catch (error) {
-      console.error('Failed to load accounts:', error);
+      console.error('Failed to load shop settings:', error);
+      // Use defaults if settings not found
+      setShopSettings({
+        conversion_factors: [0.920, 0.917],
+        default_conversion_factor: 0.920
+      });
     }
   };
 
@@ -177,130 +172,135 @@ export default function PurchasesPage() {
 
   const handleOpenDialog = (purchase = null) => {
     if (purchase) {
+      // Editing existing purchase
       setEditingPurchase(purchase);
-      setFormData({
-        vendor_party_id: purchase.vendor_party_id || '',
-        date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        description: purchase.description || '',
-        weight_grams: purchase.weight_grams || '',
-        entered_purity: purchase.entered_purity || '999',
-        rate_per_gram: purchase.rate_per_gram || '',
-        amount_total: purchase.amount_total || '',
-        paid_amount_money: purchase.paid_amount_money || '0',
-        payment_mode: purchase.payment_mode || 'Cash',
-        account_id: purchase.account_id || '',
-        advance_in_gold_grams: purchase.advance_in_gold_grams || '',
-        exchange_in_gold_grams: purchase.exchange_in_gold_grams || ''
-      });
+      
+      // Check if it's a MODULE 4 purchase (has items[]) or legacy
+      if (purchase.items && purchase.items.length > 0) {
+        // MODULE 4 purchase
+        setFormData({
+          vendor_type: purchase.vendor_type || 'saved',
+          vendor_party_id: purchase.vendor_party_id || '',
+          walk_in_name: purchase.walk_in_name || '',
+          walk_in_customer_id: purchase.walk_in_customer_id || '',
+          date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          description: purchase.description || '',
+          conversion_factor: purchase.conversion_factor || 0.920,
+          items: purchase.items.map(item => ({
+            id: item.id,
+            description: item.description,
+            weight_grams: item.weight_grams,
+            entered_purity: item.entered_purity
+          }))
+        });
+      } else {
+        // Legacy purchase - cannot edit
+        toast.error('Legacy purchases cannot be edited. Please create a new purchase.');
+        return;
+      }
     } else {
+      // New purchase
       setEditingPurchase(null);
+      const defaultConversionFactor = shopSettings?.default_conversion_factor || 0.920;
       setFormData({
+        vendor_type: 'saved',
         vendor_party_id: vendors.length > 0 ? vendors[0].id : '',
+        walk_in_name: '',
+        walk_in_customer_id: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
-        weight_grams: '',
-        entered_purity: '999',
-        rate_per_gram: '',
-        amount_total: '',
-        paid_amount_money: '0',
-        payment_mode: 'Cash',
-        account_id: accounts.length > 0 ? accounts[0].id : '',
-        advance_in_gold_grams: '',
-        exchange_in_gold_grams: ''
+        conversion_factor: defaultConversionFactor,
+        items: [
+          {
+            id: generateId(),
+            description: '',
+            weight_grams: '',
+            entered_purity: '999'
+          }
+        ]
       });
     }
-    setErrors({}); // Clear errors when opening dialog
+    setErrors({});
     setShowDialog(true);
   };
 
-  // Validate individual field
-  const validateField = (fieldName, value) => {
-    let validation = { isValid: true, error: '' };
-
-    switch (fieldName) {
-      case 'vendor_party_id':
-        validation = validateSelection(value, 'vendor');
-        break;
-      case 'weight_grams':
-        validation = validateWeight(value);
-        break;
-      case 'rate_per_gram':
-        validation = validateRate(value);
-        break;
-      case 'amount_total':
-        validation = validateAmount(value);
-        break;
-      case 'paid_amount_money':
-        validation = validatePaidAmount(value, formData.amount_total);
-        break;
-      case 'entered_purity':
-        validation = validatePurity(value);
-        break;
-      default:
-        break;
-    }
-
-    setErrors(prev => ({
+  const handleAddItem = () => {
+    setFormData(prev => ({
       ...prev,
-      [fieldName]: validation.error
+      items: [
+        ...prev.items,
+        {
+          id: generateId(),
+          description: '',
+          weight_grams: '',
+          entered_purity: '999'
+        }
+      ]
     }));
-
-    return validation.isValid;
   };
 
-  // Validate all required fields
+  const handleRemoveItem = (itemId) => {
+    if (formData.items.length === 1) {
+      toast.error('At least one item is required');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter(item => item.id !== itemId)
+    }));
+  };
+
+  const handleItemChange = (itemId, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.map(item =>
+        item.id === itemId ? { ...item, [field]: value } : item
+      )
+    }));
+  };
+
   const validateForm = () => {
     const newErrors = {};
     let isValid = true;
 
     // Vendor validation
-    const vendorValidation = validateSelection(formData.vendor_party_id, 'vendor');
-    if (!vendorValidation.isValid) {
-      newErrors.vendor_party_id = vendorValidation.error;
-      isValid = false;
+    if (formData.vendor_type === 'saved') {
+      if (!formData.vendor_party_id) {
+        newErrors.vendor_party_id = 'Vendor is required';
+        isValid = false;
+      }
+    } else if (formData.vendor_type === 'walk_in') {
+      if (!formData.walk_in_name || formData.walk_in_name.trim() === '') {
+        newErrors.walk_in_name = 'Walk-in vendor name is required';
+        isValid = false;
+      }
     }
 
-    // Weight validation
-    const weightValidation = validateWeight(formData.weight_grams);
-    if (!weightValidation.isValid) {
-      newErrors.weight_grams = weightValidation.error;
-      isValid = false;
-    }
+    // Items validation
+    formData.items.forEach((item, idx) => {
+      if (!item.description || item.description.trim() === '') {
+        newErrors[`item_${idx}_description`] = `Item ${idx + 1} description is required`;
+        isValid = false;
+      }
 
-    // Rate validation
-    const rateValidation = validateRate(formData.rate_per_gram);
-    if (!rateValidation.isValid) {
-      newErrors.rate_per_gram = rateValidation.error;
-      isValid = false;
-    }
+      const weightValidation = validateWeight(item.weight_grams);
+      if (!weightValidation.isValid) {
+        newErrors[`item_${idx}_weight`] = weightValidation.error;
+        isValid = false;
+      }
 
-    // Amount validation
-    const amountValidation = validateAmount(formData.amount_total);
-    if (!amountValidation.isValid) {
-      newErrors.amount_total = amountValidation.error;
-      isValid = false;
-    }
-
-    // Paid amount validation
-    const paidValidation = validatePaidAmount(formData.paid_amount_money, formData.amount_total);
-    if (!paidValidation.isValid) {
-      newErrors.paid_amount_money = paidValidation.error;
-      isValid = false;
-    }
-
-    // Purity validation
-    const purityValidation = validatePurity(formData.entered_purity);
-    if (!purityValidation.isValid) {
-      newErrors.entered_purity = purityValidation.error;
-      isValid = false;
-    }
+      const purityValidation = validatePurity(item.entered_purity);
+      if (!purityValidation.isValid) {
+        newErrors[`item_${idx}_purity`] = purityValidation.error;
+        isValid = false;
+      }
+    });
 
     setErrors(newErrors);
     return isValid;
   };
 
   const handleSavePurchase = async () => {
-    // Validate form before submission
     if (!validateForm()) {
       toast.error('Please fix the errors in the form');
       return;
@@ -309,18 +309,18 @@ export default function PurchasesPage() {
     setIsSubmitting(true);
     try {
       const payload = {
-        vendor_party_id: formData.vendor_party_id,
+        vendor_type: formData.vendor_type,
+        vendor_party_id: formData.vendor_type === 'saved' ? formData.vendor_party_id : null,
+        walk_in_name: formData.vendor_type === 'walk_in' ? formData.walk_in_name : null,
+        walk_in_customer_id: formData.vendor_type === 'walk_in' && formData.walk_in_customer_id ? formData.walk_in_customer_id : null,
         date: formData.date,
         description: formData.description,
-        weight_grams: parseFloat(formData.weight_grams),
-        entered_purity: parseInt(formData.entered_purity),
-        rate_per_gram: parseFloat(formData.rate_per_gram),
-        amount_total: parseFloat(formData.amount_total),
-        paid_amount_money: parseFloat(formData.paid_amount_money) || 0,
-        payment_mode: formData.payment_mode,
-        account_id: formData.account_id || null,
-        advance_in_gold_grams: formData.advance_in_gold_grams ? parseFloat(formData.advance_in_gold_grams) : null,
-        exchange_in_gold_grams: formData.exchange_in_gold_grams ? parseFloat(formData.exchange_in_gold_grams) : null
+        conversion_factor: parseFloat(formData.conversion_factor),
+        items: formData.items.map(item => ({
+          description: item.description,
+          weight_grams: parseFloat(item.weight_grams),
+          entered_purity: parseInt(item.entered_purity)
+        }))
       };
 
       if (editingPurchase) {
@@ -328,11 +328,11 @@ export default function PurchasesPage() {
         toast.success('Purchase updated successfully');
       } else {
         await API.post(`/api/purchases`, payload);
-        toast.success('Purchase created successfully');
+        toast.success('Purchase created as draft. Finalize to commit to inventory.');
       }
 
       setShowDialog(false);
-      setErrors({}); // Clear errors on success
+      setErrors({});
       loadPurchases();
     } catch (error) {
       console.error('Error saving purchase:', error);
@@ -340,6 +340,30 @@ export default function PurchasesPage() {
       toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleFinalizePurchase = async (purchase) => {
+    setFinalizingPurchase(purchase);
+    setShowFinalizeDialog(true);
+  };
+
+  const confirmFinalize = async () => {
+    if (!finalizingPurchase) return;
+
+    setIsFinalizing(true);
+    try {
+      await API.post(`/api/purchases/${finalizingPurchase.id}/finalize`);
+      toast.success('Purchase finalized successfully! Stock and accounting entries created.');
+      setShowFinalizeDialog(false);
+      setFinalizingPurchase(null);
+      loadPurchases();
+    } catch (error) {
+      console.error('Error finalizing purchase:', error);
+      const errorMsg = extractErrorMessage(error, 'Failed to finalize purchase');
+      toast.error(errorMsg);
+    } finally {
+      setIsFinalizing(false);
     }
   };
 
@@ -352,19 +376,18 @@ export default function PurchasesPage() {
       setShowDeleteConfirm(true);
     } catch (error) {
       console.error('Error fetching delete impact:', error);
-      toast.error('Failed to load confirmation data');
+      toast.error('Failed to load delete impact');
     } finally {
       setConfirmLoading(false);
     }
   };
 
-  const confirmDeletePurchase = async () => {
+  const confirmDelete = async () => {
     if (!confirmPurchase) return;
-    
-    setConfirmLoading(true);
+
     try {
       await API.delete(`/api/purchases/${confirmPurchase.id}`);
-      toast.success('Purchase deleted successfully!');
+      toast.success('Purchase deleted successfully');
       setShowDeleteConfirm(false);
       setConfirmPurchase(null);
       setImpactData(null);
@@ -373,8 +396,6 @@ export default function PurchasesPage() {
       console.error('Error deleting purchase:', error);
       const errorMsg = extractErrorMessage(error, 'Failed to delete purchase');
       toast.error(errorMsg);
-    } finally {
-      setConfirmLoading(false);
     }
   };
 
@@ -383,84 +404,58 @@ export default function PurchasesPage() {
     setShowViewDialog(true);
   };
 
-  const handleOpenPaymentDialog = (purchase) => {
-    setSelectedPurchase(purchase);
-    setPaymentData({
-      payment_amount: purchase.balance_due_money.toFixed(2), // Default to full balance
-      payment_mode: 'Cash',
-      account_id: '',
-      notes: ''
-    });
-    setShowPaymentDialog(true);
-  };
-
-  const handleAddPayment = async () => {
-    // Validate payment amount
-    if (!paymentData.payment_amount || parseFloat(paymentData.payment_amount) <= 0) {
-      toast.error('Please enter a valid payment amount');
-      return;
-    }
-
-    if (!paymentData.account_id) {
-      toast.error('Please select an account');
-      return;
-    }
-
-    try {
-      const response = await API.post(
-        `/api/purchases/${selectedPurchase.id}/add-payment`,
-        {
-          payment_amount: parseFloat(paymentData.payment_amount),
-          payment_mode: paymentData.payment_mode,
-          account_id: paymentData.account_id,
-          notes: paymentData.notes
-        }
-      );
-
-      toast.success(`Payment added successfully! Transaction #${response.data.transaction_number}`);
-      if (response.data.locked) {
-        toast.info('Purchase is now fully paid and locked.');
-      }
-
-      setShowPaymentDialog(false);
-      loadPurchases(); // Reload to show updated payment status
-    } catch (error) {
-      console.error('Error adding payment:', error);
-      const errorMsg = error.response?.data?.detail || 'Failed to add payment';
-      toast.error(errorMsg);
-    }
-  };
-
   const getVendorName = (vendorId) => {
     const vendor = vendors.find(v => v.id === vendorId);
-    return vendor ? vendor.name : 'Unknown Vendor';
+    return vendor ? vendor.name : 'Unknown';
+  };
+
+  const getVendorDisplay = (purchase) => {
+    if (purchase.vendor_type === 'walk_in') {
+      return (
+        <div>
+          <div className="font-medium">Walk-in: {purchase.walk_in_name}</div>
+          {purchase.walk_in_customer_id && (
+            <div className="text-xs text-gray-500">ID: {purchase.walk_in_customer_id}</div>
+          )}
+        </div>
+      );
+    }
+    return getVendorName(purchase.vendor_party_id);
   };
 
   const getStatusBadge = (status) => {
-    // Handle new status values: "Finalized (Unpaid)", "Partially Paid", "Paid", "Draft"
+    const statusColors = {
+      'draft': 'bg-blue-100 text-blue-800',
+      'Draft': 'bg-blue-100 text-blue-800',
+      'Finalized (Unpaid)': 'bg-yellow-100 text-yellow-800',
+      'Partially Paid': 'bg-orange-100 text-orange-800',
+      'Paid': 'bg-green-100 text-green-800'
+    };
+
+    const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
+    
+    if (status === 'Draft' || status === 'draft') {
+      return <Badge className={colorClass}><Edit className="w-3 h-3 mr-1 inline" />Draft</Badge>;
+    }
     if (status === 'Paid') {
-      return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1 inline" />Paid</Badge>;
-    } else if (status === 'Partially Paid') {
-      return <Badge className="bg-yellow-100 text-yellow-800"><AlertTriangle className="w-3 h-3 mr-1 inline" />Partially Paid</Badge>;
-    } else if (status === 'Finalized (Unpaid)') {
-      return <Badge className="bg-orange-100 text-orange-800"><Lock className="w-3 h-3 mr-1 inline" />Finalized (Unpaid)</Badge>;
-    } else if (status === 'Draft') {
-      return <Badge className="bg-blue-100 text-blue-800">Draft</Badge>;
+      return <Badge className={colorClass}><CheckCircle className="w-3 h-3 mr-1 inline" />Paid</Badge>;
     }
-    // Backward compatibility for old statuses
-    if (status === 'finalized') {
-      return <Badge className="bg-green-100 text-green-800"><Lock className="w-3 h-3 mr-1 inline" />Finalized</Badge>;
-    }
-    return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
+    return <Badge className={colorClass}>{status}</Badge>;
   };
 
   // Calculate summary stats
   const totalPurchases = purchases.length;
-  // Draft count: purchases with status "Draft"
   const draftPurchases = purchases.filter(p => p.status === 'Draft' || p.status === 'draft').length;
-  // Finalized count: all non-Draft purchases
   const finalizedPurchases = purchases.filter(p => p.status !== 'Draft' && p.status !== 'draft').length;
-  const totalWeight = purchases.reduce((sum, p) => sum + (p.weight_grams || 0), 0);
+  
+  // Calculate total weight from items[] or legacy weight_grams
+  const totalWeight = purchases.reduce((sum, p) => {
+    if (p.items && p.items.length > 0) {
+      return sum + p.items.reduce((itemSum, item) => itemSum + (item.weight_grams || 0), 0);
+    }
+    return sum + (p.weight_grams || 0);
+  }, 0);
+  
   const totalValue = purchases.reduce((sum, p) => sum + (p.amount_total || 0), 0);
 
   // Show loading spinner while data is being fetched
@@ -472,7 +467,7 @@ export default function PurchasesPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Purchases</h1>
-        <Button onClick={() => handleOpenDialog()}>
+        <Button onClick={() => handleOpenDialog()} data-testid="new-purchase-btn">
           <ShoppingCart className="w-4 h-4 mr-2" /> New Purchase
         </Button>
       </div>
@@ -590,12 +585,9 @@ export default function PurchasesPage() {
                   <th className="text-left p-3">Date</th>
                   <th className="text-left p-3">Vendor</th>
                   <th className="text-left p-3">Description</th>
+                  <th className="text-right p-3">Items</th>
                   <th className="text-right p-3">Weight (g)</th>
-                  <th className="text-right p-3">Purity</th>
-                  <th className="text-right p-3">Rate/g</th>
                   <th className="text-right p-3">Amount</th>
-                  <th className="text-right p-3">Paid</th>
-                  <th className="text-right p-3">Balance</th>
                   <th className="text-center p-3">Status</th>
                   <th className="text-center p-3">Actions</th>
                 </tr>
@@ -603,7 +595,7 @@ export default function PurchasesPage() {
               <tbody>
                 {purchases.length === 0 ? (
                   <TableEmptyState
-                    colSpan={11}
+                    colSpan={8}
                     icon="cart"
                     title="No purchases recorded"
                     message="Start by creating your first purchase to track gold inventory and vendor transactions."
@@ -614,766 +606,542 @@ export default function PurchasesPage() {
                     }}
                   />
                 ) : (
-                  purchases.map((purchase) => (
-                    <tr key={purchase.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3">{formatDate(purchase.date)}</td>
-                      <td className="p-3">{getVendorName(purchase.vendor_party_id)}</td>
-                      <td className="p-3">{purchase.description}</td>
-                      <td className="p-3 text-right font-mono">{safeToFixed(purchase.weight_grams, 3)}</td>
-                      <td className="p-3 text-right">{purchase.entered_purity}K</td>
-                      <td className="p-3 text-right font-mono">{safeToFixed(purchase.rate_per_gram, 2)}</td>
-                      <td className="p-3 text-right font-mono">{safeToFixed(purchase.amount_total, 2)}</td>
-                      <td className="p-3 text-right font-mono">{safeToFixed(purchase.paid_amount_money, 2)}</td>
-                      <td className="p-3 text-right font-mono font-semibold text-red-600">
-                        {safeToFixed(purchase.balance_due_money, 2)}
-                      </td>
-                      <td className="p-3 text-center">{getStatusBadge(purchase.status)}</td>
-                      <td className="p-3">
-                        <div className="flex gap-2 justify-center">
-                          {/* View button - always available */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-indigo-600 hover:text-indigo-700"
-                            onClick={() => handleViewPurchase(purchase)}
-                            title="View Purchase Details"
-                            data-testid={`view-purchase-${purchase.id}`}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          
-                          {/* Add Payment button - show when balance_due > 0 and not locked */}
-                          {purchase.balance_due_money > 0 && !purchase.locked && (
+                  purchases.map((purchase) => {
+                    const totalItemWeight = purchase.items && purchase.items.length > 0 
+                      ? purchase.items.reduce((sum, item) => sum + (item.weight_grams || 0), 0)
+                      : purchase.weight_grams || 0;
+                    
+                    const itemCount = purchase.items && purchase.items.length > 0 
+                      ? purchase.items.length 
+                      : 1;
+
+                    return (
+                      <tr key={purchase.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">{formatDate(purchase.date)}</td>
+                        <td className="p-3">{getVendorDisplay(purchase)}</td>
+                        <td className="p-3">{purchase.description}</td>
+                        <td className="p-3 text-right">
+                          {purchase.items && purchase.items.length > 0 ? (
+                            <Badge variant="outline">{purchase.items.length} items</Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-gray-100">Legacy</Badge>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-mono">{safeToFixed(totalItemWeight, 3)}</td>
+                        <td className="p-3 text-right font-mono">{safeToFixed(purchase.amount_total, 2)}</td>
+                        <td className="p-3 text-center">{getStatusBadge(purchase.status)}</td>
+                        <td className="p-3">
+                          <div className="flex gap-2 justify-center">
                             <Button
                               size="sm"
-                              variant="default"
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                              onClick={() => handleOpenPaymentDialog(purchase)}
-                              title="Add Payment / Pay Remaining"
-                              data-testid={`add-payment-purchase-${purchase.id}`}
+                              variant="outline"
+                              className="text-indigo-600 hover:text-indigo-700"
+                              onClick={() => handleViewPurchase(purchase)}
+                              title="View Purchase Details"
+                              data-testid={`view-purchase-${purchase.id}`}
                             >
-                              <DollarSign className="w-4 h-4 mr-1" />
-                              Add Payment
+                              <Eye className="w-4 h-4" />
                             </Button>
-                          )}
-                          
-                          {/* Edit and Delete only for unlocked purchases */}
-                          {!purchase.locked && (
-                            <>
+                            
+                            {/* Edit button - only for draft purchases */}
+                            {(purchase.status === 'Draft' || purchase.status === 'draft') && !purchase.finalized_at && (
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="text-blue-600 hover:text-blue-700"
                                 onClick={() => handleOpenDialog(purchase)}
-                                title="Edit Purchase"
+                                title="Edit Draft Purchase"
                                 data-testid={`edit-purchase-${purchase.id}`}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
+                            )}
+
+                            {/* Finalize button - only for draft purchases */}
+                            {(purchase.status === 'Draft' || purchase.status === 'draft') && !purchase.finalized_at && (
                               <Button
                                 size="sm"
-                                variant="destructive"
+                                variant="default"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => handleFinalizePurchase(purchase)}
+                                title="Finalize Purchase"
+                                data-testid={`finalize-purchase-${purchase.id}`}
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </Button>
+                            )}
+                            
+                            {/* Delete button - only for draft purchases */}
+                            {(purchase.status === 'Draft' || purchase.status === 'draft') && !purchase.finalized_at && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:text-red-700"
                                 onClick={() => handleDeletePurchase(purchase)}
-                                title="Delete Purchase"
+                                title="Delete Draft Purchase"
                                 data-testid={`delete-purchase-${purchase.id}`}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
-                            </>
-                          )}
-                          
-                          {/* Show locked badge for locked purchases */}
-                          {purchase.locked && (
-                            <Badge className="bg-green-100 text-green-800">
-                              <Lock className="w-3 h-3 mr-1" />Locked
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination Controls */}
-          {pagination && (
-            <Pagination
-              pagination={pagination}
-              onPageChange={handlePageChange}
-            />
+          {/* Pagination */}
+          {pagination && pagination.total_pages > 1 && (
+            <div className="mt-4">
+              <Pagination
+                currentPage={pagination.page}
+                totalPages={pagination.total_pages}
+                onPageChange={handlePageChange}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Create/Edit Dialog */}
+      {/* Create/Edit Purchase Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingPurchase ? 'Edit Purchase' : 'New Purchase'}</DialogTitle>
+            <DialogTitle>{editingPurchase ? 'Edit' : 'Create'} Purchase (Draft)</DialogTitle>
+            <DialogDescription>
+              {editingPurchase ? 'Update purchase details. Changes saved as draft.' : 'Create a new purchase. Will be saved as draft until finalized.'}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6">
-            {/* Basic Information */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-sm text-gray-700">Basic Information</h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Vendor *</Label>
-                  <Select 
-                    value={formData.vendor_party_id} 
-                    onValueChange={(value) => {
-                      setFormData({...formData, vendor_party_id: value});
-                      validateField('vendor_party_id', value);
-                    }}
-                  >
-                    <SelectTrigger className={errors.vendor_party_id ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="Select vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vendors.map(vendor => (
-                        <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormErrorMessage error={errors.vendor_party_id} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Date *</Label>
-                  <Input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({...formData, date: e.target.value})}
+            {/* Vendor Type Selection */}
+            <div className="space-y-2">
+              <Label>Vendor Type</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="vendor_type"
+                    value="saved"
+                    checked={formData.vendor_type === 'saved'}
+                    onChange={(e) => setFormData({ ...formData, vendor_type: e.target.value })}
+                    className="w-4 h-4"
                   />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Input
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  placeholder="Purchase description or notes"
-                />
+                  <span>Saved Vendor</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="vendor_type"
+                    value="walk_in"
+                    checked={formData.vendor_type === 'walk_in'}
+                    onChange={(e) => setFormData({ ...formData, vendor_type: e.target.value })}
+                    className="w-4 h-4"
+                  />
+                  <span>Walk-in Vendor</span>
+                </label>
               </div>
             </div>
 
-            {/* Gold Details */}
-            <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <h3 className="font-semibold text-sm text-amber-900">Gold Details</h3>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Weight (grams) *</Label>
-                  <Input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={formData.weight_grams}
-                    onChange={(e) => setFormData({...formData, weight_grams: e.target.value})}
-                    onBlur={(e) => validateField('weight_grams', e.target.value)}
-                    placeholder="0.000"
-                    className={errors.weight_grams ? 'border-red-500' : ''}
-                  />
-                  <FormErrorMessage error={errors.weight_grams} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Entered Purity *</Label>
-                  <Input
-                    type="number"
-                    value={formData.entered_purity}
-                    onChange={(e) => setFormData({...formData, entered_purity: e.target.value})}
-                    onBlur={(e) => validateField('entered_purity', e.target.value)}
-                    placeholder="999"
-                    className={errors.entered_purity ? 'border-red-500' : ''}
-                  />
-                  <FormErrorMessage error={errors.entered_purity} />
-                  <p className="text-xs text-gray-600">Purity as claimed by vendor</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Rate per Gram (OMR) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.rate_per_gram}
-                    onChange={(e) => setFormData({...formData, rate_per_gram: e.target.value})}
-                    onBlur={(e) => validateField('rate_per_gram', e.target.value)}
-                    placeholder="0.00"
-                    className={errors.rate_per_gram ? 'border-red-500' : ''}
-                  />
-                  <FormErrorMessage error={errors.rate_per_gram} />
-                </div>
-              </div>
-
-              {/* SINGLE SOURCE OF TRUTH: Purchase Cost Breakdown */}
-              {formData.weight_grams && formData.rate_per_gram && (
-                <div className="mt-4 p-4 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    <h4 className="font-semibold text-amber-900">Purchase Cost Breakdown</h4>
-                  </div>
-                  
-                  <div className="space-y-3 text-sm">
-                    {/* Calculation Formula */}
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-amber-200">
-                      <span className="text-gray-700">Weight × Rate per Gram</span>
-                      <span className="font-mono font-semibold text-gray-600 text-xs">
-                        {parseFloat(formData.weight_grams || 0).toFixed(3)}g × {parseFloat(formData.rate_per_gram || 0).toFixed(2)} OMR/g
-                      </span>
-                    </div>
-
-                    {/* Purity Info */}
-                    <div className="flex items-center justify-between p-2 bg-blue-50 rounded border border-blue-200">
-                      <span className="text-gray-700">Entered Purity</span>
-                      <span className="font-mono font-semibold">{formData.entered_purity || 999}K</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 bg-green-50 rounded border border-green-200">
-                      <span className="text-gray-700">Valuation Purity</span>
-                      <span className="font-mono font-semibold text-green-700">916K (22K) ✓</span>
-                    </div>
-
-                    {/* Total Amount - Auto-calculated and READ-ONLY */}
-                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg mt-3 shadow-md">
-                      <div>
-                        <div className="text-xs opacity-90">Total Purchase Amount</div>
-                        <div className="font-semibold">Auto-Calculated</div>
-                      </div>
-                      <span className="font-mono font-bold text-2xl">
-                        {parseFloat(formData.amount_total || 0).toFixed(2)} OMR
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm">
-                <p className="text-blue-900">
-                  <strong>Note:</strong> Total Amount is automatically calculated as Weight × Rate. Stock will be valued at <strong>916 purity (22K)</strong> regardless of entered purity.
-                </p>
-              </div>
-            </div>
-
-            {/* Payment Details */}
-            <div className="space-y-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <h3 className="font-semibold text-sm text-green-900">Payment Details (Optional)</h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Paid Amount (OMR)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.paid_amount_money}
-                    onChange={(e) => setFormData({...formData, paid_amount_money: e.target.value})}
-                    onBlur={(e) => validateField('paid_amount_money', e.target.value)}
-                    placeholder="0.00"
-                    className={errors.paid_amount_money ? 'border-red-500' : ''}
-                  />
-                  <FormErrorMessage error={errors.paid_amount_money} />
-                  <p className="text-xs text-gray-600">Amount paid during purchase</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Payment Mode</Label>
-                  <Select value={formData.payment_mode} onValueChange={(value) => setFormData({...formData, payment_mode: value})}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="Card">Card</SelectItem>
-                      <SelectItem value="UPI">UPI</SelectItem>
-                      <SelectItem value="Cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
+            {/* Vendor Selection */}
+            {formData.vendor_type === 'saved' ? (
               <div className="space-y-2">
-                <Label>Payment Account</Label>
-                <Select value={formData.account_id} onValueChange={(value) => setFormData({...formData, account_id: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
+                <Label>Vendor *</Label>
+                <Select
+                  value={formData.vendor_party_id}
+                  onValueChange={(value) => setFormData({ ...formData, vendor_party_id: value })}
+                >
+                  <SelectTrigger className={errors.vendor_party_id ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts.map(account => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name} ({account.account_type})
-                      </SelectItem>
+                    {vendors.map(vendor => (
+                      <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.vendor_party_id && <FormErrorMessage message={errors.vendor_party_id} />}
               </div>
-
-              {formData.amount_total && formData.paid_amount_money && (
-                <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-lg">
-                  <h4 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                    Payment Breakdown
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center p-2 bg-white rounded border border-green-200">
-                      <span className="text-gray-700">Total Amount:</span>
-                      <span className="font-mono font-bold text-lg text-gray-900">{parseFloat(formData.amount_total || 0).toFixed(2)} OMR</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 bg-white rounded border border-green-200">
-                      <span className="text-gray-700">Paid Amount:</span>
-                      <span className="font-mono font-semibold text-green-700">{parseFloat(formData.paid_amount_money || 0).toFixed(2)} OMR</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg mt-2">
-                      <span className="font-semibold">Balance Due:</span>
-                      <span className="font-mono font-bold text-xl">
-                        {(parseFloat(formData.amount_total || 0) - parseFloat(formData.paid_amount_money || 0)).toFixed(2)} OMR
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Gold Settlement */}
-            <div className="space-y-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-              <h3 className="font-semibold text-sm text-purple-900">Gold Settlement (Optional)</h3>
-              
-              <div className="grid grid-cols-2 gap-4">
+            ) : (
+              <>
                 <div className="space-y-2">
-                  <Label>Advance Gold Used (grams)</Label>
+                  <Label>Walk-in Vendor Name *</Label>
                   <Input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={formData.advance_in_gold_grams}
-                    onChange={(e) => setFormData({...formData, advance_in_gold_grams: e.target.value})}
-                    placeholder="0.000"
+                    value={formData.walk_in_name}
+                    onChange={(e) => setFormData({ ...formData, walk_in_name: e.target.value })}
+                    placeholder="Enter vendor name"
+                    className={errors.walk_in_name ? 'border-red-500' : ''}
                   />
-                  <p className="text-xs text-gray-600">Gold we previously gave vendor, now used as credit</p>
+                  {errors.walk_in_name && <FormErrorMessage message={errors.walk_in_name} />}
                 </div>
-
                 <div className="space-y-2">
-                  <Label>Exchange Gold Received (grams)</Label>
+                  <Label>Customer ID (Optional)</Label>
                   <Input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={formData.exchange_in_gold_grams}
-                    onChange={(e) => setFormData({...formData, exchange_in_gold_grams: e.target.value})}
-                    placeholder="0.000"
+                    value={formData.walk_in_customer_id}
+                    onChange={(e) => setFormData({ ...formData, walk_in_customer_id: e.target.value })}
+                    placeholder="Oman Customer ID (optional)"
                   />
-                  <p className="text-xs text-gray-600">Gold exchanged from vendor during purchase</p>
+                  <p className="text-xs text-gray-500">Optional Oman Customer ID for walk-in vendors</p>
                 </div>
+              </>
+            )}
+
+            {/* Date and Description */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Conversion Factor *</Label>
+                <Select
+                  value={formData.conversion_factor.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, conversion_factor: parseFloat(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(shopSettings?.conversion_factors || [0.920, 0.917]).map(factor => (
+                      <SelectItem key={factor} value={factor.toString()}>{factor}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">Used in 22K valuation formula</p>
               </div>
             </div>
 
-            {/* Duplicate breakdown section removed - using single source of truth above */}
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Purchase description"
+              />
+            </div>
 
+            {/* Items Section */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label className="text-lg font-semibold">Items</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddItem}
+                  data-testid="add-item-btn"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Item
+                </Button>
+              </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowDialog(false)} 
-                className="flex-1"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleSavePurchase} 
-                className="flex-1"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <ButtonLoadingSpinner className="mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  editingPurchase ? 'Update Purchase' : 'Create Purchase'
-                )}
-              </Button>
+              {formData.items.map((item, idx) => {
+                const itemAmount = calculate22KAmount(item.weight_grams, formData.conversion_factor);
+                
+                return (
+                  <Card key={item.id} className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-semibold text-sm">Item {idx + 1}</h4>
+                        {formData.items.length > 1 && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Description *</Label>
+                          <Input
+                            value={item.description}
+                            onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                            placeholder="Gold Bar 24K"
+                            className={errors[`item_${idx}_description`] ? 'border-red-500' : ''}
+                          />
+                          {errors[`item_${idx}_description`] && (
+                            <FormErrorMessage message={errors[`item_${idx}_description`]} />
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Weight (grams) *</Label>
+                          <Input
+                            type="number"
+                            step="0.001"
+                            value={item.weight_grams}
+                            onChange={(e) => handleItemChange(item.id, 'weight_grams', e.target.value)}
+                            placeholder="10.500"
+                            className={errors[`item_${idx}_weight`] ? 'border-red-500' : ''}
+                          />
+                          {errors[`item_${idx}_weight`] && (
+                            <FormErrorMessage message={errors[`item_${idx}_weight`]} />
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Entered Purity *</Label>
+                          <Input
+                            type="number"
+                            value={item.entered_purity}
+                            onChange={(e) => handleItemChange(item.id, 'entered_purity', e.target.value)}
+                            placeholder="999"
+                            className={errors[`item_${idx}_purity`] ? 'border-red-500' : ''}
+                          />
+                          {errors[`item_${idx}_purity`] && (
+                            <FormErrorMessage message={errors[`item_${idx}_purity`]} />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Calculated Amount Display */}
+                      <div className="bg-gray-50 p-3 rounded">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-600">Calculated Amount (22K valuation):</span>
+                          <span className="font-mono font-semibold">{safeToFixed(itemAmount, 2)} OMR</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Formula: ({item.weight_grams || 0} × 916) ÷ {formData.conversion_factor} = {safeToFixed(itemAmount, 2)}
+                        </p>
+                        <p className="text-xs text-amber-600 mt-1">
+                          ⚠️ Valued at 916 purity (22K), not entered purity
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+
+              {/* Total Amount */}
+              <Card className="bg-blue-50 p-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Total Purchase Amount:</span>
+                  <span className="text-2xl font-bold text-blue-600">
+                    {safeToFixed(calculateTotalAmount(formData.items, formData.conversion_factor), 2)} OMR
+                  </span>
+                </div>
+              </Card>
             </div>
           </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSavePurchase}
+              disabled={isSubmitting}
+              data-testid="save-purchase-btn"
+            >
+              {isSubmitting ? <ButtonLoadingSpinner text="Saving..." /> : 'Save as Draft'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Purchase Dialog - Option C Enhancement */}
+      {/* View Purchase Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-serif">Purchase Details</DialogTitle>
+            <DialogTitle>Purchase Details</DialogTitle>
           </DialogHeader>
 
           {viewPurchase && (
-            <div className="space-y-6">
-              {/* Purchase Header */}
-              <div className="grid grid-cols-2 gap-6 p-4 bg-muted/50 rounded-lg">
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Purchase Date</p>
-                    <p className="font-medium">{formatDate(viewPurchase.date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Vendor</p>
-                    <p className="font-semibold text-lg">{getVendorName(viewPurchase.vendor_party_id)}</p>
-                  </div>
-                  {viewPurchase.description && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">Description</p>
-                      <p className="font-medium text-sm">{viewPurchase.description}</p>
-                    </div>
-                  )}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-gray-500">Date</Label>
+                  <p className="font-medium">{formatDate(viewPurchase.date)}</p>
                 </div>
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Purchase Status</p>
-                    <div className="mt-1">{getStatusBadge(viewPurchase.status)}</div>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Created At</p>
-                    <p className="font-mono text-sm">
-                      {formatDateTime(viewPurchase.created_at)}
-                    </p>
-                  </div>
-                  {viewPurchase.finalized_at && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">Finalized At</p>
-                      <p className="font-mono text-sm">
-                        {formatDateTime(viewPurchase.finalized_at)}
-                      </p>
-                    </div>
-                  )}
+                <div>
+                  <Label className="text-xs text-gray-500">Status</Label>
+                  <div>{getStatusBadge(viewPurchase.status)}</div>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Vendor</Label>
+                  <p className="font-medium">{getVendorDisplay(viewPurchase)}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Conversion Factor</Label>
+                  <p className="font-medium">{viewPurchase.conversion_factor || 'N/A'}</p>
                 </div>
               </div>
 
-              {/* ENHANCED Gold Details Section - Option C Improvements */}
-              <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-50 border-2 border-amber-300 rounded-xl p-5 shadow-lg">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg text-amber-900 flex items-center gap-2">
-                    <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Gold Details & Calculation
-                  </h3>
-                  <Badge className="bg-amber-100 text-amber-800 px-3 py-1">Gold Purchase</Badge>
-                </div>
-
-                {/* Gold Details Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                  <div className="bg-white rounded-lg p-3 border-2 border-amber-200 shadow-sm">
-                    <div className="text-xs text-amber-700 font-medium uppercase mb-1">Weight</div>
-                    <div className="font-mono font-bold text-xl text-amber-900">
-                      {(viewPurchase.weight_grams || 0).toFixed(3)} g
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white rounded-lg p-3 border-2 border-amber-200 shadow-sm">
-                    <div className="text-xs text-amber-700 font-medium uppercase mb-1">Entered Purity</div>
-                    <div className="font-mono font-bold text-xl text-amber-900">
-                      {viewPurchase.entered_purity || 999}K
-                    </div>
-                    <div className="text-xs text-amber-600 mt-1">As received</div>
-                  </div>
-                  
-                  <div className="bg-white rounded-lg p-3 border-2 border-green-200 shadow-sm">
-                    <div className="text-xs text-green-700 font-medium uppercase mb-1">Valuation Purity</div>
-                    <div className="font-mono font-bold text-xl text-green-900">
-                      916K (22K)
-                    </div>
-                    <div className="text-xs text-green-600 mt-1">For inventory</div>
-                  </div>
-                  
-                  <div className="bg-white rounded-lg p-3 border-2 border-blue-200 shadow-sm">
-                    <div className="text-xs text-blue-700 font-medium uppercase mb-1">Rate per Gram</div>
-                    <div className="font-mono font-bold text-xl text-blue-900">
-                      {(viewPurchase.rate_per_gram || 0).toFixed(2)} OMR
-                    </div>
-                  </div>
-                </div>
-
-                {/* Calculation Breakdown */}
-                <div className="bg-gradient-to-r from-amber-100 to-yellow-100 rounded-lg p-4 border border-amber-300 mb-4">
-                  <div className="text-sm font-semibold text-amber-900 mb-3">Cost Calculation:</div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-700">Base Amount:</span>
-                      <span className="font-mono font-semibold text-amber-900">
-                        {(viewPurchase.weight_grams || 0).toFixed(3)}g × {(viewPurchase.rate_per_gram || 0).toFixed(2)} OMR/g = {((viewPurchase.weight_grams || 0) * (viewPurchase.rate_per_gram || 0)).toFixed(2)} OMR
-                      </span>
-                    </div>
-                    {viewPurchase.entered_purity !== 916 && (
-                      <div className="text-xs text-amber-700 italic border-t pt-2 border-amber-200">
-                        💡 Note: Gold entered as {viewPurchase.entered_purity}K but valued at 916K (22K standard) for inventory purposes
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Total Amount Card */}
-                <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 rounded-xl p-5 shadow-xl border-2 border-amber-400">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-amber-100 text-xs font-medium uppercase mb-1">Total Purchase Amount</div>
-                      <div className="font-mono font-black text-4xl text-white">
-                        {(viewPurchase.amount_total || 0).toFixed(2)} <span className="text-xl text-amber-200">OMR</span>
-                      </div>
-                    </div>
-                    <svg className="w-16 h-16 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </div>
-                </div>
+              <div>
+                <Label className="text-xs text-gray-500">Description</Label>
+                <p className="font-medium">{viewPurchase.description}</p>
               </div>
 
-              {/* Payment Breakdown Section */}
-              <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-green-50 border-2 border-green-300 rounded-xl p-5 shadow-lg">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg text-green-900 flex items-center gap-2">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Payment Breakdown
-                  </h3>
-                  <Badge className="bg-green-100 text-green-800 px-3 py-1">Financial Details</Badge>
-                </div>
-
-                {/* Payment Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div className="bg-white rounded-lg p-4 border-2 border-blue-200 shadow-sm">
-                    <div className="text-xs text-blue-700 font-medium uppercase mb-1">Total Amount</div>
-                    <div className="font-mono font-bold text-2xl text-blue-900">
-                      {(viewPurchase.amount_total || 0).toFixed(2)} OMR
-                    </div>
-                    <div className="text-xs text-blue-600 mt-1">Purchase value</div>
-                  </div>
-                  
-                  <div className="bg-white rounded-lg p-4 border-2 border-green-200 shadow-sm">
-                    <div className="text-xs text-green-700 font-medium uppercase mb-1">Paid Amount</div>
-                    <div className="font-mono font-bold text-2xl text-green-900">
-                      {(viewPurchase.paid_amount_money || 0).toFixed(2)} OMR
-                    </div>
-                    <div className="text-xs text-green-600 mt-1">Payment made</div>
-                  </div>
-                  
-                  <div className="bg-white rounded-lg p-4 border-2 border-red-200 shadow-sm">
-                    <div className="text-xs text-red-700 font-medium uppercase mb-1">Balance Due</div>
-                    <div className="font-mono font-bold text-2xl text-red-900">
-                      {(viewPurchase.balance_due_money || 0).toFixed(2)} OMR
-                    </div>
-                    <div className="text-xs text-red-600 mt-1">Outstanding to vendor</div>
+              {/* Items Display */}
+              {viewPurchase.items && viewPurchase.items.length > 0 ? (
+                <div>
+                  <Label className="text-sm font-semibold mb-2 block">Items ({viewPurchase.items.length})</Label>
+                  <div className="space-y-2">
+                    {viewPurchase.items.map((item, idx) => (
+                      <Card key={item.id || idx} className="p-3">
+                        <div className="grid grid-cols-4 gap-2 text-sm">
+                          <div>
+                            <Label className="text-xs text-gray-500">Description</Label>
+                            <p className="font-medium">{item.description}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Weight</Label>
+                            <p className="font-mono">{safeToFixed(item.weight_grams, 3)}g</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Entered Purity</Label>
+                            <p>{item.entered_purity}K</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Amount (22K)</Label>
+                            <p className="font-mono font-semibold">{safeToFixed(item.calculated_amount, 2)} OMR</p>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
                   </div>
                 </div>
-
-                {/* Payment Mode & Account */}
-                <div className="bg-white rounded-lg p-4 border border-green-200">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-green-700 font-medium">Payment Mode:</span>
-                      <span className="ml-2 font-mono">{viewPurchase.payment_mode || 'Cash'}</span>
-                    </div>
-                    {viewPurchase.account_id && (
+              ) : (
+                <div>
+                  <Label className="text-sm font-semibold mb-2 block">Legacy Purchase (Single Item)</Label>
+                  <Card className="p-3 bg-gray-50">
+                    <div className="grid grid-cols-3 gap-2 text-sm">
                       <div>
-                        <span className="text-green-700 font-medium">Account Used:</span>
-                        <span className="ml-2 font-mono">{accounts.find(a => a.id === viewPurchase.account_id)?.name || 'N/A'}</span>
+                        <Label className="text-xs text-gray-500">Weight</Label>
+                        <p className="font-mono">{safeToFixed(viewPurchase.weight_grams, 3)}g</p>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gold Settlement Section (if applicable) */}
-              {(viewPurchase.advance_in_gold_grams || viewPurchase.exchange_in_gold_grams) && (
-                <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-purple-50 border-2 border-purple-300 rounded-xl p-5 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-lg text-purple-900 flex items-center gap-2">
-                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                      </svg>
-                      Gold Settlement
-                    </h3>
-                    <Badge className="bg-purple-100 text-purple-800 px-3 py-1">Gold Exchange</Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    {viewPurchase.advance_in_gold_grams > 0 && (
-                      <div className="bg-white rounded-lg p-4 border-2 border-purple-200 shadow-sm">
-                        <div className="text-xs text-purple-700 font-medium uppercase mb-1">Advance Gold Returned</div>
-                        <div className="font-mono font-bold text-xl text-purple-900">
-                          {(viewPurchase.advance_in_gold_grams || 0).toFixed(3)} g
-                        </div>
-                        <div className="text-xs text-purple-600 mt-1">Gold given back to vendor</div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Purity</Label>
+                        <p>{viewPurchase.entered_purity}K</p>
                       </div>
-                    )}
-                    
-                    {viewPurchase.exchange_in_gold_grams > 0 && (
-                      <div className="bg-white rounded-lg p-4 border-2 border-indigo-200 shadow-sm">
-                        <div className="text-xs text-indigo-700 font-medium uppercase mb-1">Exchange Gold</div>
-                        <div className="font-mono font-bold text-xl text-indigo-900">
-                          {(viewPurchase.exchange_in_gold_grams || 0).toFixed(3)} g
-                        </div>
-                        <div className="text-xs text-indigo-600 mt-1">Gold exchanged</div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Rate/g</Label>
+                        <p className="font-mono">{safeToFixed(viewPurchase.rate_per_gram, 2)} OMR</p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  </Card>
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowViewDialog(false)}
-                  className="flex-1"
-                >
-                  Close
-                </Button>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                <div>
+                  <Label className="text-xs text-gray-500">Total Amount</Label>
+                  <p className="text-2xl font-bold">{safeToFixed(viewPurchase.amount_total, 2)} OMR</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Valuation Purity</Label>
+                  <p className="text-lg font-semibold text-amber-600">916 (22K)</p>
+                </div>
               </div>
             </div>
           )}
+
+          <DialogFooter>
+            <Button onClick={() => setShowViewDialog(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-
-      {/* Payment Dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="max-w-md">
+      {/* Finalize Confirmation Dialog */}
+      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Payment - Purchase #{selectedPurchase?.id?.slice(0, 8)}</DialogTitle>
+            <DialogTitle>Finalize Purchase</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to finalize this purchase? This action will:
+            </DialogDescription>
           </DialogHeader>
 
-          {selectedPurchase && (
-            <div className="space-y-6">
-              {/* Purchase Summary */}
-              <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Vendor:</span>
-                  <span className="font-semibold">{getVendorName(selectedPurchase.vendor_party_id)}</span>
+          {finalizingPurchase && (
+            <div className="space-y-3">
+              <div className="bg-blue-50 p-3 rounded space-y-2">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Create Stock Movements</p>
+                    <p className="text-xs text-gray-600">
+                      {finalizingPurchase.items?.length || 1} items will be added to inventory at 916 purity (22K)
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Amount:</span>
-                  <span className="font-mono font-semibold">{safeToFixed(selectedPurchase.amount_total, 2)} OMR</span>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Create Vendor Payable</p>
+                    <p className="text-xs text-gray-600">
+                      Transaction for {safeToFixed(finalizingPurchase.amount_total, 2)} OMR will be recorded
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Paid Amount:</span>
-                  <span className="font-mono">{safeToFixed(selectedPurchase.paid_amount_money, 2)} OMR</span>
-                </div>
-                <div className="flex justify-between text-base font-semibold border-t pt-2">
-                  <span>Balance Due:</span>
-                  <span className="font-mono text-red-600">{safeToFixed(selectedPurchase.balance_due_money, 2)} OMR</span>
-                </div>
-              </div>
-
-              {/* Payment Form */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Payment Mode *</Label>
-                  <Select 
-                    value={paymentData.payment_mode} 
-                    onValueChange={(value) => setPaymentData({...paymentData, payment_mode: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="Card">Card</SelectItem>
-                      <SelectItem value="UPI/Online">UPI/Online</SelectItem>
-                      <SelectItem value="Cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Payment Amount (OMR) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={paymentData.payment_amount}
-                    onChange={(e) => setPaymentData({...paymentData, payment_amount: e.target.value})}
-                    placeholder="Enter payment amount"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setPaymentData({...paymentData, payment_amount: safeToFixed(selectedPurchase.balance_due_money, 2)})}
-                    className="text-xs text-blue-600 hover:text-blue-700"
-                  >
-                    Set to full balance ({safeToFixed(selectedPurchase.balance_due_money, 2)} OMR)
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Account (Where money comes from) *</Label>
-                  <Select 
-                    value={paymentData.account_id} 
-                    onValueChange={(value) => setPaymentData({...paymentData, account_id: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map(account => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name} ({account.account_type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Notes (Optional)</Label>
-                  <Input
-                    value={paymentData.notes}
-                    onChange={(e) => setPaymentData({...paymentData, notes: e.target.value})}
-                    placeholder="Payment notes or reference"
-                  />
+                <div className="flex items-start gap-2">
+                  <Lock className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Lock Purchase Details</p>
+                    <p className="text-xs text-gray-600">
+                      Items, conversion factor, and valuation will become immutable
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowPaymentDialog(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleAddPayment}
-                  className="flex-1"
-                >
-                  Add Payment
-                </Button>
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded">
+                <div className="flex gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm text-amber-900">Warning</p>
+                    <p className="text-xs text-amber-800">
+                      Once finalized, this purchase cannot be edited. Ensure all details are correct.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFinalizeDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmFinalize}
+              disabled={isFinalizing}
+              className="bg-green-600 hover:bg-green-700"
+              data-testid="confirm-finalize-btn"
+            >
+              {isFinalizing ? <ButtonLoadingSpinner text="Finalizing..." /> : 'Finalize Purchase'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
 
       {/* Delete Confirmation Dialog */}
       <ConfirmationDialog
         open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        onConfirm={confirmDeletePurchase}
-        title="Delete Purchase?"
-        description={`Are you sure you want to delete this purchase from ${confirmPurchase ? getVendorName(confirmPurchase.vendor_party_id) : ''}?`}
-        impact={impactData}
-        actionLabel="Delete Purchase"
-        actionType="danger"
-        loading={confirmLoading}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setConfirmPurchase(null);
+          setImpactData(null);
+        }}
+        onConfirm={confirmDelete}
+        title="Delete Purchase"
+        message="Are you sure you want to delete this draft purchase? This action cannot be undone."
+        confirmText="Delete"
+        confirmVariant="destructive"
+        data-testid="delete-confirm-dialog"
       />
     </div>
   );
