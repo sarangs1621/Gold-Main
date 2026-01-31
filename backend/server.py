@@ -2880,6 +2880,59 @@ async def get_party_impact(party_id: str, current_user: User = Depends(require_p
     
     return impact
 
+@api_router.get("/parties/{party_id}/customer-id-lock-status")
+async def get_customer_id_lock_status(party_id: str, current_user: User = Depends(require_permission('parties.view'))):
+    """
+    Check if customer_id is locked (read-only) for this party.
+    Customer ID becomes locked if party is linked to any finalized financial records.
+    """
+    party = await db.parties.find_one({"id": party_id, "is_deleted": False}, {"_id": 0})
+    if not party:
+        raise HTTPException(status_code=404, detail="Party not found")
+    
+    # Check for finalized invoices
+    finalized_invoice = await db.invoices.find_one({
+        "customer_id": party_id,
+        "is_deleted": False,
+        "status": "finalized"
+    })
+    
+    # Check for locked/paid purchases
+    locked_purchase = await db.purchases.find_one({
+        "vendor_party_id": party_id,
+        "is_deleted": False,
+        "$or": [
+            {"status": "finalized"},
+            {"payment_status": "paid"}
+        ]
+    })
+    
+    # Check for finalized returns
+    finalized_return = await db.returns.find_one({
+        "party_id": party_id,
+        "is_deleted": False,
+        "status": "finalized"
+    })
+    
+    is_locked = bool(finalized_invoice or locked_purchase or finalized_return)
+    
+    lock_reason = []
+    if finalized_invoice:
+        lock_reason.append("finalized invoices")
+    if locked_purchase:
+        lock_reason.append("finalized purchases")
+    if finalized_return:
+        lock_reason.append("finalized returns")
+    
+    return {
+        "party_id": party_id,
+        "customer_id": party.get("customer_id"),
+        "is_locked": is_locked,
+        "lock_reason": ", ".join(lock_reason) if lock_reason else None,
+        "message": f"Customer ID is read-only due to linked {', '.join(lock_reason)}" if is_locked else "Customer ID can be edited"
+    }
+
+
 @api_router.delete("/parties/{party_id}")
 async def delete_party(party_id: str, current_user: User = Depends(require_permission('parties.delete'))):
     if not user_has_permission(current_user, 'parties.delete'):
