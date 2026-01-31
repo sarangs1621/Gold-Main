@@ -402,7 +402,7 @@ class Module6TestRunner:
             )
             
             if response.status_code != 200:
-                self.log_test("Correct DEBIT/CREDIT - Get Return", False, "Failed to get return")
+                self.log_test("Correct DEBIT/CREDIT - Get Return", False, f"Failed to get return: {response.text}")
                 return
             
             return_data = response.json()
@@ -410,30 +410,42 @@ class Module6TestRunner:
             transaction_id = return_data.get('transaction_id')
             
             if not transaction_id:
-                self.log_test("Correct DEBIT/CREDIT", False, "No transaction created")
+                self.log_test("Correct DEBIT/CREDIT", False, "No transaction created (possibly gold-only refund)")
                 return
             
-            # Get the transaction
+            # Get the transaction directly by ID
             response = await self.client.get(
-                f"{API_BASE}/transactions",
-                headers=self.headers,
-                params={"page": 1, "page_size": 1000}
+                f"{API_BASE}/transactions/{transaction_id}",
+                headers=self.headers
             )
             
+            # If direct access fails, try listing all
             if response.status_code != 200:
-                self.log_test("Correct DEBIT/CREDIT - Get Transaction", False, "Failed to get transactions")
-                return
-            
-            transactions_data = response.json()
-            transactions = transactions_data.get('items', transactions_data if isinstance(transactions_data, list) else [])
-            
-            transaction = next((t for t in transactions if t['id'] == transaction_id), None)
+                response = await self.client.get(
+                    f"{API_BASE}/transactions",
+                    headers=self.headers,
+                    params={"page": 1, "page_size": 1000}
+                )
+                
+                if response.status_code != 200:
+                    self.log_test("Correct DEBIT/CREDIT - Get Transaction", False, f"Failed to get transactions: {response.text}")
+                    return
+                
+                transactions_data = response.json()
+                transactions = transactions_data.get('items', transactions_data if isinstance(transactions_data, list) else [])
+                transaction = next((t for t in transactions if t['id'] == transaction_id), None)
+            else:
+                transaction = response.json()
             
             if not transaction:
-                self.log_test("Correct DEBIT/CREDIT", False, f"Transaction {transaction_id} not found")
+                self.log_test("Correct DEBIT/CREDIT", False, f"Transaction {transaction_id} not found in system")
                 return
             
-            transaction_type = transaction['transaction_type']
+            transaction_type = transaction.get('transaction_type')
+            
+            if not transaction_type:
+                self.log_test("Correct DEBIT/CREDIT", False, f"Transaction has no transaction_type field")
+                return
             
             # MODULE 6 RULES:
             # Sales return refund → DEBIT
@@ -451,7 +463,8 @@ class Module6TestRunner:
                     self.log_test("Correct DEBIT/CREDIT", False, f"Purchase return should use CREDIT, but got {transaction_type}")
             
         except Exception as e:
-            self.log_test("Correct DEBIT/CREDIT", False, f"Exception: {str(e)}")
+            import traceback
+            self.log_test("Correct DEBIT/CREDIT", False, f"Exception: {str(e)}\n{traceback.format_exc()}")
     
     # ==========================================================================
     # TEST 7: Finalized Return Locked
