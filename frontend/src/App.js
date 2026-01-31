@@ -137,6 +137,16 @@ function App() {
             }
           />
           <Route
+            path="/reports/ledger"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ReportsLedgerPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/audit-logs"
             element={
               <ProtectedRoute>
