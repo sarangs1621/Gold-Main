@@ -976,6 +976,19 @@ export default function InvoicesPage() {
                         <span className="font-mono text-red-600">-{(viewInvoice.discount_amount || 0).toFixed(3)} OMR</span>
                       </div>
                     )}
+                    {/* MODULE 3: Show Advance Gold if present */}
+                    {viewInvoice.gold_weight && viewInvoice.gold_weight > 0 && (
+                      <div className="flex justify-between text-sm border-t pt-2 border-yellow-200 bg-yellow-50 -mx-4 px-4 py-2">
+                        <span className="text-yellow-800 font-medium">💰 Advance Gold:</span>
+                        <span className="font-mono text-yellow-900">-{(viewInvoice.gold_value || 0).toFixed(2)} OMR</span>
+                      </div>
+                    )}
+                    {viewInvoice.gold_weight && viewInvoice.gold_weight > 0 && (
+                      <div className="text-xs text-yellow-700 -mx-4 px-4 pb-2 bg-yellow-50">
+                        {viewInvoice.gold_weight.toFixed(3)}g × {viewInvoice.gold_rate_per_gram?.toFixed(2) || 0} OMR/g 
+                        {viewInvoice.gold_purity && ` (${viewInvoice.gold_purity} purity)`}
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">VAT Total:</span>
                       <span className="font-mono">{(viewInvoice.vat_total || 0).toFixed(3)} OMR</span>
