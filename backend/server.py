@@ -2444,19 +2444,16 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
     if purity < 1 or purity > 999:
         raise HTTPException(status_code=400, detail="Purity must be between 1 and 999")
     
-    # MODULE 7: Determine movement type based on weight sign
-    # Positive weight = Adding to inventory
-    # Negative weight = Removing from inventory (manual correction only)
-    if weight > 0:
-        movement_type = "IN"
-    else:
-        movement_type = "OUT"
-        # For manual OUT movements, verify current stock is sufficient
-        current_weight = header.get('current_weight', 0)
-        if current_weight + float(weight) < 0:  # weight is negative, so we're adding
+    # MODULE 7: For negative adjustments (removing stock), validate sufficient stock exists
+    if weight < 0:
+        # Query StockMovements as Single Source of Truth
+        stock = await calculate_stock_from_movements(header_id=movement_data['header_id'])
+        current_weight = stock['total_weight']
+        
+        if current_weight + float(weight) < 0:  # weight is negative, so we're subtracting
             raise HTTPException(
                 status_code=400,
-                detail=f"Insufficient stock for adjustment. Current: {current_weight}g, Adjustment: {weight}g"
+                detail=f"Insufficient stock for adjustment. Current: {round(current_weight, 3)}g, Adjustment: {weight}g"
             )
     
     # MODULE 7: Create StockMovement with new structure
@@ -2477,17 +2474,9 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
         weight_delta=float(weight)
     )
     
-    # Insert stock movement
+    # MODULE 7: Insert stock movement ONLY
+    # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
     await db.stock_movements.insert_one(movement.model_dump())
-    
-    # Update inventory header
-    new_weight = header.get('current_weight', 0) + float(weight)
-    new_qty = header.get('current_qty', 0) + (1 if weight > 0 else -1)
-    
-    await db.inventory_headers.update_one(
-        {"id": movement_data['header_id']},
-        {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
-    )
     
     # Create audit log
     await create_audit_log(
