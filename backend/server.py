@@ -487,6 +487,7 @@ ROLE_PERMISSIONS = {
         'finance.view',
         'inventory.view',
         'jobcards.view', 'jobcards.create', 'jobcards.update',
+        'worktypes.view',
         'reports.view',
         'returns.view', 'returns.create',
     ],
