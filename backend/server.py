@@ -3739,162 +3739,6 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
     # Insert purchase as DRAFT (no accounting entries yet)
     await db.purchases.insert_one(purchase.model_dump())
     
-    # === OPERATION 1: Create Stock IN movements for each item ===
-    purity = 916  # Always 916
-    header_name = f"Gold {purity // 41.6:.0f}K"  # 916 = 22K
-    
-    header = await db.inventory_headers.find_one({"name": header_name, "is_deleted": False})
-    if not header:
-        # Create new inventory header
-        header = InventoryHeader(
-            name=header_name,
-            current_qty=0,
-            current_weight=0,
-            created_by=current_user.username
-        )
-        await db.inventory_headers.insert_one(header.model_dump())
-    
-    # Create Stock IN movement for each item
-    for item in validated_items:
-        movement = StockMovement(
-            date=purchase.date,
-            movement_type="Stock IN",
-            header_id=header.get("id") if isinstance(header, dict) else header.id,
-            header_name=header_name,
-            description=f"Purchase from {vendor_name}: {item['description']}",
-            qty_delta=1,
-            weight_delta=item['weight_grams'],
-            purity=purity,
-            reference_type="purchase",
-            reference_id=purchase_id,
-            created_by=current_user.username,
-            notes=f"Entered purity: {item['entered_purity']}, Valuation purity: {purity}, Conversion factor: {conversion_factor}"
-        )
-        await db.stock_movements.insert_one(movement.model_dump())
-    
-    # Update inventory header with total weight
-    header_id = header.get("id") if isinstance(header, dict) else header.id
-    await db.inventory_headers.update_one(
-        {"id": header_id},
-        {"$inc": {
-            "current_qty": len(validated_items),
-            "current_weight": float(total_weight)
-        }}
-    )
-    
-    # === OPERATION 2: Create DEBIT transaction if paid_amount_money > 0 ===
-    if purchase_data["paid_amount_money"] > 0:
-        current_year = datetime.now(timezone.utc).year
-        existing_txns = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{current_year}-"}})
-        payment_txn_number = f"TXN-{current_year}-{existing_txns + 1:04d}"
-        
-        account = await db.accounts.find_one({"id": purchase_data["account_id"], "is_deleted": False})
-        
-        payment_transaction = Transaction(
-            transaction_number=payment_txn_number,
-            date=purchase.date,
-            transaction_type="credit",
-            mode=purchase_data.get("payment_mode", "Cash"),
-            account_id=purchase_data["account_id"],
-            account_name=account["name"],
-            party_id=purchase.vendor_party_id,
-            party_name=vendor_name,
-            amount=round(purchase_data["paid_amount_money"], 2),
-            category="Purchase Payment",
-            reference_type="purchase",
-            reference_id=purchase_id,
-            notes=f"Payment for purchase: {purchase.description} ({float(total_weight)}g)",
-            created_by=current_user.username
-        )
-        await db.transactions.insert_one(payment_transaction.model_dump())
-        
-        # Update account balance
-        delta = -payment_transaction.amount
-        await db.accounts.update_one(
-            {"id": purchase_data["account_id"]}, 
-            {"$inc": {"current_balance": delta}}
-        )
-    
-    # === OPERATION 3: Create GoldLedgerEntry OUT if advance_in_gold_grams > 0 ===
-    advance_gold = purchase_data.get("advance_in_gold_grams")
-    if advance_gold and advance_gold > 0:
-        advance_gold = round(advance_gold, 3)
-        
-        # For walk-in, party_id should be None
-        gold_party_id = purchase.vendor_party_id if vendor_type == "saved" else None
-        
-        advance_entry = GoldLedgerEntry(
-            party_id=gold_party_id,
-            date=purchase.date,
-            type="OUT",
-            weight_grams=advance_gold,
-            purity_entered=validated_items[0]['entered_purity'] if validated_items else 916,
-            purpose="advance_gold",
-            reference_type="purchase",
-            reference_id=purchase_id,
-            notes=f"Advance gold settled in purchase: {purchase.description}",
-            created_by=current_user.username
-        )
-        await db.gold_ledger.insert_one(advance_entry.model_dump())
-    
-    # === OPERATION 4: Create GoldLedgerEntry IN if exchange_in_gold_grams > 0 ===
-    exchange_gold = purchase_data.get("exchange_in_gold_grams")
-    if exchange_gold and exchange_gold > 0:
-        exchange_gold = round(exchange_gold, 3)
-        
-        # For walk-in, party_id should be None
-        gold_party_id = purchase.vendor_party_id if vendor_type == "saved" else None
-        
-        exchange_entry = GoldLedgerEntry(
-            party_id=gold_party_id,
-            date=purchase.date,
-            type="IN",
-            weight_grams=exchange_gold,
-            purity_entered=validated_items[0]['entered_purity'] if validated_items else 916,
-            purpose="exchange",
-            reference_type="purchase",
-            reference_id=purchase_id,
-            notes=f"Gold exchanged in purchase: {purchase.description}",
-            created_by=current_user.username
-        )
-        await db.gold_ledger.insert_one(exchange_entry.model_dump())
-    
-    # === OPERATION 5: Create vendor payable transaction ONLY for balance_due_money ===
-    balance_due = purchase_data["balance_due_money"]
-    
-    if balance_due > 0:
-        current_year = datetime.now(timezone.utc).year
-        existing_txns = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{current_year}-"}})
-        payable_txn_number = f"TXN-{current_year}-{existing_txns + 1:04d}"
-        
-        purchases_account = await db.accounts.find_one({"name": "Purchases", "is_deleted": False})
-        if not purchases_account:
-            purchases_account = Account(
-                name="Purchases",
-                account_type="expense",
-                current_balance=0,
-                created_by=current_user.username
-            )
-            await db.accounts.insert_one(purchases_account.model_dump())
-        
-        payable_transaction = Transaction(
-            transaction_number=payable_txn_number,
-            date=purchase.date,
-            transaction_type="credit",
-            mode="Vendor Payable",
-            account_id=purchases_account.get("id") if isinstance(purchases_account, dict) else purchases_account.id,
-            account_name="Purchases",
-            party_id=purchase.vendor_party_id,
-            party_name=vendor_name,
-            amount=round(balance_due, 2),
-            category="Purchase",
-            reference_type="purchase",
-            reference_id=purchase_id,
-            notes=f"Vendor payable for purchase: {purchase.description} ({float(total_weight)}g, 22K valuation, CF: {conversion_factor})",
-            created_by=current_user.username
-        )
-        await db.transactions.insert_one(payable_transaction.model_dump())
-    
     # Create audit log
     await create_audit_log(
         user_id=current_user.id,
@@ -3910,14 +3754,11 @@ async def create_purchase(request: Request, purchase_data: dict, current_user: U
             "items_count": len(validated_items),
             "total_weight_grams": float(total_weight),
             "amount_total": purchase.amount_total,
-            "paid_amount_money": purchase.paid_amount_money,
-            "balance_due_money": purchase.balance_due_money,
-            "status": calculated_status,
-            "auto_finalized": True
+            "status": "draft"
         }
     )
     
-    # Return the created purchase with correct status
+    # Return the created draft purchase
     return purchase
 
 @api_router.post("/purchases/{purchase_id}/add-payment")
