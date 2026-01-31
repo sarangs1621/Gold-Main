@@ -2488,6 +2488,100 @@ async def get_stock_totals(current_user: User = Depends(require_permission('inve
         for h in headers
     ]
 
+@api_router.get("/inventory/reconciliation")
+async def reconcile_inventory(current_user: User = Depends(require_permission('inventory.adjust'))):
+    """
+    MODULE 7: Inventory Reconciliation - Calculate stock from StockMovements.
+    
+    ADMIN-ONLY endpoint to verify that inventory totals match StockMovements.
+    
+    Calculation Rule (MODULE 7):
+    Current Stock = SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+    
+    Returns:
+    - Calculated totals from StockMovements
+    - Current totals from InventoryHeaders
+    - Discrepancies (if any)
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can access inventory reconciliation"
+        )
+    
+    # Get all headers
+    headers = await db.inventory_headers.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
+    
+    reconciliation_results = []
+    
+    for header in headers:
+        header_id = header['id']
+        header_name = header['name']
+        
+        # Get all movements for this header
+        movements = await db.stock_movements.find(
+            {"header_id": header_id, "is_deleted": False},
+            {"_id": 0}
+        ).to_list(None)
+        
+        # MODULE 7: Calculate from movements: SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+        calculated_weight = Decimal('0.000')
+        
+        for movement in movements:
+            # Get weight from new or legacy field
+            weight = movement.get('weight')
+            if weight is not None:
+                # New field - handle Decimal128
+                if isinstance(weight, Decimal128):
+                    weight = weight.to_decimal()
+                else:
+                    weight = Decimal(str(weight))
+            else:
+                # Legacy field
+                weight = Decimal(str(movement.get('weight_delta', 0)))
+            
+            # Get movement type (new or legacy)
+            movement_type = movement.get('movement_type', '')
+            
+            # MODULE 7: Apply weight based on movement type
+            if movement_type in ['IN', 'Stock IN']:
+                calculated_weight += abs(weight)
+            elif movement_type in ['OUT', 'Stock OUT']:
+                calculated_weight -= abs(weight)
+            elif movement_type in ['ADJUSTMENT', 'Adjustment']:
+                # Adjustments can be positive or negative
+                calculated_weight += weight
+        
+        # Get current totals from header
+        current_weight = Decimal(str(header.get('current_weight', 0)))
+        current_qty = header.get('current_qty', 0)
+        
+        # Calculate discrepancy
+        discrepancy = calculated_weight - current_weight
+        
+        reconciliation_results.append({
+            "header_id": header_id,
+            "header_name": header_name,
+            "current_qty": current_qty,
+            "current_weight_header": float(current_weight),
+            "calculated_weight_movements": float(calculated_weight),
+            "discrepancy": float(discrepancy),
+            "matches": abs(discrepancy) < 0.001,  # Allow 0.001g tolerance for rounding
+            "movement_count": len(movements)
+        })
+    
+    # Summary statistics
+    total_discrepancies = sum(1 for r in reconciliation_results if not r['matches'])
+    
+    return {
+        "reconciliation_date": datetime.now(timezone.utc).isoformat(),
+        "performed_by": current_user.full_name,
+        "total_headers": len(reconciliation_results),
+        "headers_with_discrepancies": total_discrepancies,
+        "all_match": total_discrepancies == 0,
+        "details": reconciliation_results
+    }
+
 # ============================================================================
 # NEW ENDPOINTS FOR API COMPLETENESS
 # ============================================================================
