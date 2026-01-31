@@ -1,0 +1,284 @@
+[
+  {
+    "test": "Authentication",
+    "success": true,
+    "details": "Successfully authenticated as admin_netflow_test",
+    "timestamp": "2026-01-28T14:51:17.804707",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Account (Test Cash Account)",
+    "success": true,
+    "details": "Created account: Test Cash Account (Type: asset)",
+    "timestamp": "2026-01-28T14:51:18.495130",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Account (Bank Account)",
+    "success": true,
+    "details": "Created account: Bank Account (Type: asset)",
+    "timestamp": "2026-01-28T14:51:19.318257",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (DEBIT)",
+    "success": true,
+    "details": "Created debit transaction: 2000.0 OMR (ID: 129544ef-c97a-4fb2-90c7-d73b1c2856b4)",
+    "timestamp": "2026-01-28T14:51:20.487087",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (DEBIT)",
+    "success": true,
+    "details": "Created debit transaction: 1500.0 OMR (ID: e09ac835-5318-4a0f-96d1-39127bb9b6f4)",
+    "timestamp": "2026-01-28T14:51:21.538667",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (CREDIT)",
+    "success": true,
+    "details": "Created credit transaction: 800.0 OMR (ID: 2aeb7fb6-e793-42c7-80d0-f530c941dbda)",
+    "timestamp": "2026-01-28T14:51:22.588087",
+    "response_data": null
+  },
+  {
+    "test": "Net Flow Filtering Fix - Math Verification",
+    "success": true,
+    "details": "Net Flow Math: \u2713 (5850.0 - 118478.93 = -112628.93); Cash Net Math: \u2713 (4350.0 - 118478.93 = -114128.93); Bank Net Math: \u2713 (1500.0 - 0.0 = 1500.0); Total IN Math: \u2713; Total OUT Math: \u2713; Cash Test Data: \u2713; Bank Test Data: \u2713",
+    "timestamp": "2026-01-28T14:51:25.493018",
+    "response_data": {
+      "summary_data": {
+        "total_credit": 317256.239,
+        "total_debit": 7106.129,
+        "net_flow": -112628.93,
+        "total_in": 5850.0,
+        "total_out": 118478.93,
+        "transaction_count": 61,
+        "cash_summary": {
+          "credit": 118478.93,
+          "debit": 4350.0,
+          "net": -114128.93
+        },
+        "bank_summary": {
+          "credit": 0.0,
+          "debit": 1500.0,
+          "net": 1500.0
+        },
+        "account_breakdown": [
+          {
+            "account_id": "c3b806a3-97ef-4222-92c9-d9181e5e6ac7",
+            "account_name": "jishnu",
+            "credit": 202.0,
+            "debit": 65.735,
+            "account_type": "expense",
+            "net": 136.265
+          },
+          {
+            "account_id": "bc87cfcd-ebfd-4e6e-949c-4bf9079a565f",
+            "account_name": "sales income",
+            "credit": 4074.059,
+            "debit": 772.0,
+            "account_type": "income",
+            "net": 3302.059
+          },
+          {
+            "account_id": "4fe8c3a1-72e0-4819-97e4-0e68ec87917a",
+            "account_name": "hade",
+            "credit": 2530.0,
+            "debit": 418.394,
+            "account_type": "income",
+            "net": 2111.606
+          },
+          {
+            "account_id": "15e6da61-9752-43d9-a3dc-f4310291ad40",
+            "account_name": "purchases",
+            "credit": 191971.25,
+            "debit": 0.0,
+            "account_type": "expense",
+            "net": 191971.25
+          },
+          {
+            "account_id": "4e6f8dd3-8535-4320-b957-d3f51917fb36",
+            "account_name": "test cash account 1769567374",
+            "credit": 75316.43,
+            "debit": 200.0,
+            "account_type": "asset",
+            "net": -75116.43
+          },
+          {
+            "account_id": "b8590e89-794a-4f86-af9a-27a486d83caf",
+            "account_name": "test cash account 1769567767",
+            "credit": 4712.5,
+            "debit": 0.0,
+            "account_type": "asset",
+            "net": -4712.5
+          },
+          {
+            "account_id": "1daff3ec-0a64-4d14-a3f0-1b998b4220e1",
+            "account_name": "test cash account 1769567817",
+            "credit": 7225.0,
+            "debit": 0.0,
+            "account_type": "asset",
+            "net": -7225.0
+          },
+          {
+            "account_id": "284b5268-9152-48a1-90e7-d078afeec621",
+            "account_name": "test cash account",
+            "credit": 29425.0,
+            "debit": 0.0,
+            "account_type": "asset",
+            "net": -29425.0
+          },
+          {
+            "account_id": "75054c8e-b13c-48b9-a3b4-309880cb4f97",
+            "account_name": "test cash account",
+            "credit": 0.0,
+            "debit": 150.0,
+            "account_type": "asset",
+            "net": 150.0
+          },
+          {
+            "account_id": "83648ba5-b054-4d6a-85ec-93b497833631",
+            "account_name": "test cash account - 544fa669",
+            "credit": 500.0,
+            "debit": 1000.0,
+            "account_type": "asset",
+            "net": 500.0
+          },
+          {
+            "account_id": "8301b9f5-97a7-46ee-b302-eb0312a7f491",
+            "account_name": "test cash account - 5a5bf5fd",
+            "credit": 500.0,
+            "debit": 1000.0,
+            "account_type": "asset",
+            "net": 500.0
+          },
+          {
+            "account_id": "8ad7492f-5bbb-44a2-af91-5ce1ac27125a",
+            "account_name": "test cash account",
+            "credit": 800.0,
+            "debit": 2000.0,
+            "account_type": "asset",
+            "net": 1200.0
+          },
+          {
+            "account_id": "6847585a-7643-4dd0-b5dd-635b6e1859a3",
+            "account_name": "bank account",
+            "credit": 0.0,
+            "debit": 1500.0,
+            "account_type": "asset",
+            "net": 1500.0
+          }
+        ]
+      },
+      "test_results": {
+        "net_flow_correct": true,
+        "cash_net_correct": true,
+        "bank_net_correct": true,
+        "total_in_correct": true,
+        "total_out_correct": true,
+        "cash_includes_test_data": true,
+        "bank_includes_test_data": true
+      }
+    }
+  },
+  {
+    "test": "Transactions Summary Endpoint",
+    "success": true,
+    "details": "Net Flow Math: \u2713 (5850.0 - 118478.93 = -112628.93), Cash Net: \u2713 (4350.0 - 118478.93 = -114128.93), Bank Net: \u2713 (1500.0 - 0.0 = 1500.0)",
+    "timestamp": "2026-01-28T14:51:26.397446",
+    "response_data": {
+      "total_in": 5850.0,
+      "total_out": 118478.93,
+      "net_flow": -112628.93,
+      "calculated_net_flow": -112628.93,
+      "math_correct": true,
+      "cash_summary": {
+        "credit": 118478.93,
+        "debit": 4350.0,
+        "net": -114128.93
+      },
+      "bank_summary": {
+        "credit": 0.0,
+        "debit": 1500.0,
+        "net": 1500.0
+      }
+    }
+  },
+  {
+    "test": "Create Test Cash Account",
+    "success": true,
+    "details": "Created test cash account: Test Cash Account - 2f452d6e",
+    "timestamp": "2026-01-28T14:51:27.104621",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (DEBIT)",
+    "success": true,
+    "details": "Created debit transaction: 1000.0 OMR (ID: bcd196a4-dbe2-4809-b97f-452b54c45617)",
+    "timestamp": "2026-01-28T14:51:28.156957",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (CREDIT)",
+    "success": true,
+    "details": "Created credit transaction: 500.0 OMR (ID: 86a0fcae-6bd2-476a-9d81-d628886ce71b)",
+    "timestamp": "2026-01-28T14:51:29.205972",
+    "response_data": null
+  },
+  {
+    "test": "Net Flow with Real Data",
+    "success": true,
+    "details": "Math Consistent: \u2713, Cash Net Consistent: \u2713, Values Rounded: \u2713, Net Flow: -112128.93 OMR (In: 6850.0, Out: 118978.93)",
+    "timestamp": "2026-01-28T14:51:31.022044",
+    "response_data": {
+      "total_in": 6850.0,
+      "total_out": 118978.93,
+      "net_flow": -112128.93,
+      "calculated_net_flow": -112128.93,
+      "cash_summary": {
+        "credit": 118978.93,
+        "debit": 5350.0,
+        "net": -113628.93
+      },
+      "math_consistent": true,
+      "cash_net_consistent": true,
+      "values_rounded": true
+    }
+  },
+  {
+    "test": "Create Test Transaction (DEBIT)",
+    "success": true,
+    "details": "Created debit transaction: 100.0 OMR (ID: 60a374cb-4580-4b53-88a2-f8ffda5ed010)",
+    "timestamp": "2026-01-28T14:51:32.736683",
+    "response_data": null
+  },
+  {
+    "test": "Accounting Logic - Test Cash Account 1769567374 DEBIT",
+    "success": true,
+    "details": "DEBIT correctly increased balance: -75116.43 \u2192 -75016.43 (+100.0)",
+    "timestamp": "2026-01-28T14:51:33.297363",
+    "response_data": null
+  },
+  {
+    "test": "Create Test Transaction (CREDIT)",
+    "success": true,
+    "details": "Created credit transaction: 50.0 OMR (ID: 13c3040e-16b4-44d7-9633-20b9ce00bd07)",
+    "timestamp": "2026-01-28T14:51:34.376228",
+    "response_data": null
+  },
+  {
+    "test": "Accounting Logic - Bank Account CREDIT",
+    "success": true,
+    "details": "CREDIT correctly decreased balance: 1500.0 \u2192 1450.0 (-50.0)",
+    "timestamp": "2026-01-28T14:51:34.935138",
+    "response_data": null
+  },
+  {
+    "test": "Accounting Logic Consistency",
+    "success": true,
+    "details": "Accounting logic tests: 2/2 passed (100.0%)",
+    "timestamp": "2026-01-28T14:51:34.935167",
+    "response_data": null
+  }
+]

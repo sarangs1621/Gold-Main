@@ -1,0 +1,55 @@
+Starting Comprehensive Backend API Testing
+Testing Returns Module workflow and previously fixed features
+================================================================================
+✅ PASS - Authentication: Successfully authenticated as testadmin
+
+============================================================
+TESTING RETURNS MODULE COMPLETE WORKFLOW
+============================================================
+✅ PASS - Get Returnable Invoices: Retrieved 9 returnable invoices
+✅ PASS - Get Test Customer: Using existing customer: Perf Test Party 1 20260125073346
+✅ PASS - Create Test Invoice for Returns: Created and finalized test invoice: INV-2026-0013
+✅ PASS - Get Returnable Items: Retrieved 1 returnable items from invoice
+✅ PASS - Create Draft Return: Created draft return: RET-00003 (Amount: 603.92 OMR)
+✅ PASS - Get Test Account: Using existing account: Test Cash Account 1769567374
+✅ PASS - Edit Draft Return: Added refund details: money refund of 603.93 OMR
+❌ FAIL - Get Finalize Impact: Failed: 520 - Internal Server Error
+❌ FAIL - Finalize Return: Failed: 520 - {"detail":"Error finalizing return: 4 validation errors for StockMovement\nmovement_type\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nheader_name\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nqty_delta\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nweight_delta\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing. Changes have been rolled back."}
+
+--- Testing Return Validations ---
+✅ PASS - Validation - Exceed Original Amount: Correctly blocked excessive return: Cannot return more quantity than original Invoice INV-2026-0013. Original qty: 1, Already returned: 0, Current return: 10, Total would be: 10
+❌ FAIL - Validation - Edit Finalized Return: Should have blocked editing finalized return but got: 200
+❌ FAIL - Validation - Delete Finalized Return: Should have blocked deleting finalized return but got: 200
+
+============================================================
+TESTING PREVIOUSLY FIXED FEATURES
+============================================================
+
+--- Testing Purchases Add Payment ---
+✅ PASS - Get Test Vendor: Using existing vendor: Axe
+✅ PASS - Create Draft Purchase: Created draft purchase (Status: Draft, Balance: 18642.75 OMR)
+✅ PASS - Get Test Account: Using existing account: Test Cash Account 1769567374
+✅ PASS - Add Payment to Purchase: Payment added successfully (Status: None, Paid: None OMR, Balance: None OMR, Locked: False)
+
+--- Testing Invoice Stock Movements ---
+✅ PASS - Get Test Customer: Using existing customer: Perf Test Party 1 20260125073346
+✅ PASS - Invoice Stock Movements: Stock OUT movement created: Invoice INV-2026-0014 - Finalized (Qty: -1.0, Weight: -4.45g)
+
+--- Testing Finance Dashboard ---
+✅ PASS - Finance Dashboard: Dashboard structure valid (Categories: 13, Outstanding: 22445.55 OMR, Customers: 127)
+
+================================================================================
+TEST SUMMARY
+================================================================================
+Total Tests: 20
+Passed: 16 ✅
+Failed: 4 ❌
+Success Rate: 80.0%
+
+FAILED TESTS:
+❌ Get Finalize Impact: Failed: 520 - Internal Server Error
+❌ Finalize Return: Failed: 520 - {"detail":"Error finalizing return: 4 validation errors for StockMovement\nmovement_type\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nheader_name\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nqty_delta\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nweight_delta\n  Field required [type=missing, input_value={'id': '44acdab7-95ed-4a4...44ff-86a3-c953c630585a'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing. Changes have been rolled back."}
+❌ Validation - Edit Finalized Return: Should have blocked editing finalized return but got: 200
+❌ Validation - Delete Finalized Return: Should have blocked deleting finalized return but got: 200
+
+Detailed results saved to test_results.json

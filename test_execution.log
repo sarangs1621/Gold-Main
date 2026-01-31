@@ -1,0 +1,43 @@
+Starting Comprehensive Backend API Testing
+Testing Returns Module workflow and previously fixed features
+================================================================================
+✅ PASS - Authentication: Successfully authenticated as testadmin
+
+============================================================
+TESTING RETURNS MODULE COMPLETE WORKFLOW
+============================================================
+✅ PASS - Get Returnable Invoices: Retrieved 5 returnable invoices
+✅ PASS - Get Test Customer: Using existing customer: Perf Test Party 1 20260125073346
+✅ PASS - Create Test Invoice for Returns: Created and finalized test invoice: INV-2026-0009
+✅ PASS - Get Returnable Items: Retrieved 1 returnable items from invoice
+❌ FAIL - Create Draft Return: Failed: 520 - {"detail":"Error creating return draft: 1 validation error for Return\nparty_name\n  Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/string_type"}
+
+============================================================
+TESTING PREVIOUSLY FIXED FEATURES
+============================================================
+
+--- Testing Purchases Add Payment ---
+✅ PASS - Get Test Vendor: Using existing vendor: Axe
+✅ PASS - Create Draft Purchase: Created draft purchase (Status: Draft, Balance: 18642.75 OMR)
+✅ PASS - Get Test Account: Using existing account: Test Cash Account 1769567374
+✅ PASS - Add Payment to Purchase: Payment added successfully (Status: None, Paid: None OMR, Balance: None OMR, Locked: False)
+
+--- Testing Invoice Stock Movements ---
+✅ PASS - Get Test Customer: Using existing customer: Perf Test Party 1 20260125073346
+✅ PASS - Invoice Stock Movements: Stock OUT movement created: Invoice INV-2026-0010 - Finalized (Qty: -1.0, Weight: -4.45g)
+
+--- Testing Finance Dashboard ---
+✅ PASS - Finance Dashboard: Dashboard structure valid (Categories: 13, Outstanding: 18225.43 OMR, Customers: 127)
+
+================================================================================
+TEST SUMMARY
+================================================================================
+Total Tests: 13
+Passed: 12 ✅
+Failed: 1 ❌
+Success Rate: 92.3%
+
+FAILED TESTS:
+❌ Create Draft Return: Failed: 520 - {"detail":"Error creating return draft: 1 validation error for Return\nparty_name\n  Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.12/v/string_type"}
+
+Detailed results saved to test_results.json
