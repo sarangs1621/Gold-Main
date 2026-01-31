@@ -1,0 +1,92 @@
+{
+  "total_tests": 14,
+  "passed_tests": 12,
+  "failed_tests": 2,
+  "success_rate": 85.71428571428571,
+  "results": [
+    {
+      "test": "Authentication",
+      "success": true,
+      "details": "Successfully logged in as admin",
+      "error": ""
+    },
+    {
+      "test": "Get Test Customer",
+      "success": true,
+      "details": "Using customer ID: a8b552ab-efa7-4f5b-a1ae-95064962d367",
+      "error": ""
+    },
+    {
+      "test": "Get Test Worker",
+      "success": true,
+      "details": "Using worker ID: 650ffe11-a921-4029-bd86-8f707e2eed61",
+      "error": ""
+    },
+    {
+      "test": "Get Work Types",
+      "success": true,
+      "details": "Found 4 work types",
+      "error": ""
+    },
+    {
+      "test": "Create Work Type",
+      "success": true,
+      "details": "Created work type with ID: 41156b8f-a4b4-4304-8269-81acccec5469",
+      "error": ""
+    },
+    {
+      "test": "Update Work Type",
+      "success": true,
+      "details": "Successfully updated work type name",
+      "error": ""
+    },
+    {
+      "test": "Deactivate Work Type",
+      "success": true,
+      "details": "Successfully deactivated work type",
+      "error": ""
+    },
+    {
+      "test": "Deactivated Work Type Hidden",
+      "success": true,
+      "details": "Deactivated work type not in active list",
+      "error": ""
+    },
+    {
+      "test": "Create Per-Inch Job Card",
+      "success": true,
+      "details": "Created job card JC0020 with per-inch charge",
+      "error": ""
+    },
+    {
+      "test": "Per-Inch Validation",
+      "success": false,
+      "details": "",
+      "error": "Should have rejected invalid per-inch data"
+    },
+    {
+      "test": "Flat Making Charge",
+      "success": true,
+      "details": "Successfully created job card with flat charge",
+      "error": ""
+    },
+    {
+      "test": "Per-Gram Making Charge",
+      "success": true,
+      "details": "Successfully created job card with per-gram charge",
+      "error": ""
+    },
+    {
+      "test": "Update Non-Finalized Job Card",
+      "success": true,
+      "details": "Successfully updated job card",
+      "error": ""
+    },
+    {
+      "test": "Decimal Precision",
+      "success": false,
+      "details": "",
+      "error": "No items in response"
+    }
+  ]
+}
