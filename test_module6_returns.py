@@ -97,7 +97,10 @@ class Module6TestRunner:
         )
         if response.status_code == 200:
             accounts_data = response.json()
-            accounts = accounts_data.get('items', accounts_data if isinstance(accounts_data, list) else [])
+            if isinstance(accounts_data, list):
+                accounts = accounts_data
+            else:
+                accounts = accounts_data.get('items', [])
             if accounts and len(accounts) > 0:
                 self.test_account_id = accounts[0]['id']
                 print(f"{GREEN}✓ Found test account: {accounts[0].get('name')}{RESET}")
