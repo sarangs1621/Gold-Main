@@ -8,7 +8,210 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Settings as SettingsIcon, UserPlus, Edit, Trash2, Key } from 'lucide-react';
+import { Settings as SettingsIcon, UserPlus, Edit, Trash2, Key, Briefcase, Plus, Power } from 'lucide-react';
+
+// MODULE 2: Work Types Management Component
+function WorkTypesManagement() {
+  const [workTypes, setWorkTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showDialog, setShowDialog] = useState(false);
+  const [editingWorkType, setEditingWorkType] = useState(null);
+  const [formData, setFormData] = useState({ name: '', is_active: true });
+
+  useEffect(() => {
+    loadWorkTypes();
+  }, []);
+
+  const loadWorkTypes = async () => {
+    try {
+      setLoading(true);
+      const response = await API.get('/api/worktypes', {
+        params: { include_inactive: true }
+      });
+      setWorkTypes(response.data.worktypes || []);
+    } catch (error) {
+      toast.error('Failed to load work types');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formData.name || !formData.name.trim()) {
+      toast.error('Work type name is required');
+      return;
+    }
+
+    try {
+      if (editingWorkType) {
+        await API.patch(`/api/worktypes/${editingWorkType.id}`, formData);
+        toast.success('Work type updated successfully');
+      } else {
+        await API.post('/api/worktypes', formData);
+        toast.success('Work type created successfully');
+      }
+      setShowDialog(false);
+      setFormData({ name: '', is_active: true });
+      setEditingWorkType(null);
+      loadWorkTypes();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to save work type');
+    }
+  };
+
+  const handleDeactivate = async (workType) => {
+    try {
+      await API.delete(`/api/worktypes/${workType.id}`);
+      toast.success('Work type deactivated successfully');
+      loadWorkTypes();
+    } catch (error) {
+      toast.error('Failed to deactivate work type');
+    }
+  };
+
+  const handleActivate = async (workType) => {
+    try {
+      await API.patch(`/api/worktypes/${workType.id}`, { is_active: true });
+      toast.success('Work type activated successfully');
+      loadWorkTypes();
+    } catch (error) {
+      toast.error('Failed to activate work type');
+    }
+  };
+
+  return (
+    <>
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-xl font-serif flex items-center gap-2">
+              <Briefcase className="w-5 h-5" />
+              Work Types Management
+            </CardTitle>
+            <Button
+              onClick={() => {
+                setEditingWorkType(null);
+                setFormData({ name: '', is_active: true });
+                setShowDialog(true);
+              }}
+              size="sm"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Work Type
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Name</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Status</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {workTypes.map((wt) => (
+                    <tr key={wt.id} className="hover:bg-muted/30">
+                      <td className="px-4 py-3">{wt.name}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            wt.is_active
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {wt.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingWorkType(wt);
+                              setFormData({ name: wt.name, is_active: wt.is_active });
+                              setShowDialog(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {wt.is_active ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeactivate(wt)}
+                              className="text-orange-600 hover:text-orange-700"
+                            >
+                              <Power className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleActivate(wt)}
+                              className="text-green-600 hover:text-green-700"
+                            >
+                              <Power className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingWorkType ? 'Edit Work Type' : 'Add New Work Type'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div>
+              <Label>Work Type Name *</Label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g., Polish, Resize, Repair"
+              />
+            </div>
+            {editingWorkType && (
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={formData.is_active}
+                  onChange={(e) =>
+                    setFormData({ ...formData, is_active: e.target.checked })
+                  }
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="is_active" className="cursor-pointer">
+                  Active (visible in job card dropdowns)
+                </Label>
+              </div>
+            )}
+            <Button onClick={handleSave} className="w-full">
+              {editingWorkType ? 'Update Work Type' : 'Create Work Type'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export default function SettingsPage() {
   const { user } = useAuth();
