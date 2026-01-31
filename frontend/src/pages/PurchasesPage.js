@@ -652,7 +652,8 @@ export default function PurchasesPage() {
                   <SelectItem value="Draft">Draft</SelectItem>
                   <SelectItem value="Finalized (Unpaid)">Finalized (Unpaid)</SelectItem>
                   <SelectItem value="Partially Paid">Partially Paid</SelectItem>
-                  <SelectItem value="Paid">Paid</SelectItem>
+                  <SelectItem value="Fully Paid">Fully Paid</SelectItem>
+                  <SelectItem value="Paid">Paid (Legacy)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
