@@ -5413,11 +5413,126 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
                 {"locked": True, "reason": f"Invoice {invoice.invoice_number} finalized"}
             )
     
-    # Step 4: REMOVED - Invoice finalization does NOT create finance transactions
+    # Step 4: MODULE 3 - Handle Advance Gold (if present)
+    # When customer provides gold upfront, it reduces the amount they need to pay
+    gold_ledger_created = False
+    gold_transaction_created = False
+    
+    if invoice.gold_weight and invoice.gold_weight > 0:
+        # Validate gold fields are complete
+        if not invoice.gold_rate_per_gram or invoice.gold_rate_per_gram <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Gold rate per gram must be provided when gold weight is present"
+            )
+        
+        # Calculate gold value (should already be stored, but recalculate for safety)
+        gold_value = round(invoice.gold_weight * invoice.gold_rate_per_gram, 2)
+        
+        # Create GoldLedger entry (type=IN - shop receives gold from customer)
+        # party_id can be None for walk-in customers
+        gold_ledger_entry = GoldLedgerEntry(
+            party_id=invoice.customer_id,  # None for walk-ins, that's OK
+            type="IN",  # IN = shop receives gold from party
+            weight_grams=round(invoice.gold_weight, 3),
+            purity_entered=invoice.gold_purity or 916,  # Default to 22K if not specified
+            purpose="advance_gold",
+            reference_type="invoice",
+            reference_id=invoice.id,
+            notes=f"Advance gold for invoice {invoice.invoice_number}. Rate: {invoice.gold_rate_per_gram:.2f} OMR/g, Value: {gold_value:.2f} OMR",
+            created_by=current_user.id
+        )
+        await db.gold_ledger.insert_one(gold_ledger_entry.model_dump())
+        gold_ledger_created = True
+        
+        # Create Transaction entry for the gold value received
+        # This is a DEBIT to a Gold Asset account (or similar)
+        # Find or create "Gold Received" account
+        gold_account = await db.accounts.find_one(
+            {"name": "Gold Received (Advance)", "is_deleted": False}, 
+            {"_id": 0}
+        )
+        if not gold_account:
+            # Create default Gold Received account (ASSET type)
+            gold_account = {
+                "id": str(uuid.uuid4()),
+                "name": "Gold Received (Advance)",
+                "account_type": "asset",
+                "opening_balance": 0,
+                "current_balance": 0,
+                "created_at": datetime.now(timezone.utc),
+                "created_by": current_user.id,
+                "is_deleted": False
+            }
+            await db.accounts.insert_one(gold_account)
+        
+        # Generate transaction number
+        year = datetime.now(timezone.utc).year
+        count = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{year}"}})
+        transaction_number = f"TXN-{year}-{str(count + 1).zfill(4)}"
+        
+        # Determine party details
+        party_id = invoice.customer_id if invoice.customer_type == "saved" else None
+        party_name = None
+        if invoice.customer_type == "saved":
+            party_name = invoice.customer_name or "Unknown Customer"
+        else:
+            party_name = invoice.walk_in_name or "Walk-in Customer"
+        
+        # Create transaction (DEBIT Gold Asset - increases asset)
+        transaction = Transaction(
+            transaction_number=transaction_number,
+            transaction_type="debit",  # Debit increases asset
+            mode="GOLD_ADVANCE",
+            account_id=gold_account['id'],
+            account_name=gold_account['name'],
+            party_id=party_id,
+            party_name=party_name,
+            amount=gold_value,
+            category="Advance Gold Receipt",
+            notes=f"Advance gold for invoice {invoice.invoice_number}. {invoice.gold_weight:.3f}g @ {invoice.gold_rate_per_gram:.2f} OMR/g",
+            reference_type="invoice",
+            reference_id=invoice.id,
+            created_by=current_user.id
+        )
+        await db.transactions.insert_one(transaction.model_dump())
+        gold_transaction_created = True
+        
+        # Update account balance (DEBIT increases asset balance)
+        await db.accounts.update_one(
+            {"id": gold_account['id']},
+            {"$inc": {"current_balance": gold_value}}
+        )
+        
+        # Update invoice paid_amount and balance_due
+        # Gold value counts as partial payment
+        adjusted_total = invoice.grand_total - gold_value
+        new_paid_amount = gold_value
+        new_balance_due = adjusted_total  # Can be negative if gold > grand_total
+        
+        await db.invoices.update_one(
+            {"id": invoice_id},
+            {
+                "$set": {
+                    "paid_amount": new_paid_amount,
+                    "balance_due": new_balance_due,
+                    "payment_status": "paid" if new_balance_due <= 0 else "partial"
+                }
+            }
+        )
+        
+        # If balance becomes zero or negative, set paid_at timestamp
+        if new_balance_due <= 0:
+            await db.invoices.update_one(
+                {"id": invoice_id},
+                {"$set": {"paid_at": finalized_at}}
+            )
+    
+    # Step 5: REMOVED - Invoice finalization does NOT create finance transactions (except for gold)
     # Financial transactions are ONLY created when PAYMENT is received
     # This ensures correct accounting: invoices do not move money, payments do
     
-    # Step 5: Outstanding balance is automatically updated
+    # Step 6: Outstanding balance is automatically updated
     # The balance_due field in the invoice record already tracks outstanding amount
     # Party ledger calculations aggregate all invoice balance_due values
     
