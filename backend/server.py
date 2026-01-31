@@ -1101,18 +1101,67 @@ class GoldLedgerEntry(BaseModel):
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[str] = None
 
+class PurchaseItem(BaseModel):
+    """
+    MODULE 4: Individual item in a purchase - supports multiple items with different purities.
+    
+    CRITICAL VALUATION RULE:
+    - entered_purity: Stored for reference only (as claimed by vendor)
+    - calculated_amount: ALWAYS uses 916 purity via formula:
+      amount = (weight_grams × 916) ÷ conversion_factor
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str  # Item description
+    weight_grams: float  # 3 decimal precision - actual weight
+    entered_purity: int  # Purity as entered/claimed (e.g., 999, 995, 916) - REFERENCE ONLY
+    calculated_amount: float  # Auto-calculated using 22K (916) valuation - 2 decimal precision
+
 class Purchase(BaseModel):
-    """Purchase model for tracking gold purchases from vendors (Stock IN + Vendor Payable)"""
+    """
+    MODULE 4: Purchase model for tracking gold purchases from vendors.
+    
+    VALUATION LOGIC (NON-NEGOTIABLE):
+    - All items valued at 22K (916 purity) regardless of entered purity
+    - Formula: amount = (weight × 916) ÷ conversion_factor
+    - conversion_factor: 0.920 or 0.917 (selectable per purchase)
+    - entered_purity: Stored for reference only, NOT used in valuation
+    
+    MULTIPLE ITEMS:
+    - items[]: List of PurchaseItem (different purities allowed)
+    - amount_total: Sum of all item amounts
+    - conversion_factor: One per purchase (applies to all items)
+    
+    WALK-IN VENDOR:
+    - vendor_type: "saved" or "walk_in"
+    - If walk_in: vendor_party_id can be Optional, walk_in_name required
+    - customer_id: Optional for walk-ins
+    """
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    vendor_party_id: str  # Must be a vendor type party
+    
+    # MODULE 4: Vendor information (saved or walk-in)
+    vendor_type: str = "saved"  # "saved" or "walk_in"
+    vendor_party_id: Optional[str] = None  # Required for saved vendors, optional for walk-ins
+    walk_in_name: Optional[str] = None  # Required for walk-in vendors
+    walk_in_customer_id: Optional[str] = None  # Optional Oman Customer ID for walk-ins
+    
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     description: str
-    weight_grams: float  # 3 decimal precision - actual weight
-    entered_purity: int  # Purity as entered/claimed by vendor (e.g., 999, 995, 916)
+    
+    # MODULE 4: Multiple items support
+    items: List[PurchaseItem] = []  # List of purchase items (different purities allowed)
+    
+    # MODULE 4: Conversion factor (0.920 or 0.917)
+    conversion_factor: float  # Required: 0.920 or 0.917 - used in 22K valuation formula
+    
+    # Backward compatibility: Single-item fields (deprecated but kept for old data)
+    weight_grams: Optional[float] = None  # DEPRECATED: Use items[] instead
+    entered_purity: Optional[int] = None  # DEPRECATED: Use items[] instead
     valuation_purity_fixed: int = 916  # ALWAYS 916 for stock calculations and accounting
-    rate_per_gram: float  # Rate per gram for 916 purity - 2 decimal precision
-    amount_total: float  # Total amount = weight_grams * rate_per_gram - 2 decimal precision
+    rate_per_gram: Optional[float] = None  # DEPRECATED: Calculation now uses conversion_factor
+    
+    amount_total: float  # Total amount = sum of all item amounts - 2 decimal precision
+    
     # MODULE 4: Payment and Gold Settlement fields
     paid_amount_money: float = 0.0  # Amount paid during purchase (2 decimal precision)
     balance_due_money: float = 0.0  # Auto-calculated: amount_total - paid_amount_money (2 decimal precision)
@@ -1120,7 +1169,7 @@ class Purchase(BaseModel):
     account_id: Optional[str] = None  # Account from which payment was made
     advance_in_gold_grams: Optional[float] = None  # Gold we gave vendor previously, now used as credit (3 decimals)
     exchange_in_gold_grams: Optional[float] = None  # Gold exchanged from vendor during purchase (3 decimals)
-    status: str  # MUST be calculated: "Finalized (Unpaid)" | "Partially Paid" | "Paid" | "Draft" (Draft only for future explicit save-as-draft feature)
+    status: str  # MUST be calculated: "Finalized (Unpaid)" | "Partially Paid" | "Paid" | "Draft"
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[str] = None
     locked: bool = False  # Finalized purchases are locked
