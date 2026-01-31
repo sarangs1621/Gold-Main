@@ -2555,27 +2555,24 @@ async def delete_stock_movement(movement_id: str, current_user: User = Depends(r
         # Fall back to legacy field
         weight_to_reverse = movement.get('weight_delta', 0)
     
-    # Calculate reversed values
-    new_weight = header.get('current_weight', 0) - weight_to_reverse
-    new_qty = header.get('current_qty', 0) - movement.get('qty_delta', 0)
+    # MODULE 7: Validate reversal won't make stock negative
+    # Query current stock from StockMovements
+    current_stock = await calculate_stock_from_movements(header_id=movement['header_id'])
     
-    # Validate reversal won't make stock negative
-    if new_qty < 0 or new_weight < 0:
+    # Calculate what stock would be after deletion
+    stock_after_deletion = current_stock['total_weight'] - weight_to_reverse
+    
+    if stock_after_deletion < 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete movement: would result in negative stock. Current: {header.get('current_qty', 0)} qty, {header.get('current_weight', 0)}g"
+            detail=f"Cannot delete movement: would result in negative stock. Current: {round(current_stock['total_weight'], 3)}g, Reversal: {round(weight_to_reverse, 3)}g"
         )
     
-    # Soft delete the movement
+    # MODULE 7: Soft delete the movement ONLY
+    # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
     await db.stock_movements.update_one(
         {"id": movement_id},
         {"$set": {"is_deleted": True}}
-    )
-    
-    # Reverse the stock change in header
-    await db.inventory_headers.update_one(
-        {"id": movement['header_id']},
-        {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
     )
     
     # Create audit log
