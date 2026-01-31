@@ -452,6 +452,9 @@ PERMISSIONS = {
     'returns.create': 'Create returns',
     'returns.finalize': 'Finalize returns',
     'returns.delete': 'Delete returns',
+    
+    # MODULE 9: Finance Dashboard
+    'dashboard.finance.view': 'View finance dashboard',
 }
 
 # Role-Permission Mappings
