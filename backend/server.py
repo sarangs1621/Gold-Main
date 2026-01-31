@@ -5547,9 +5547,12 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
             "status": "finalized", 
             "finalized_at": finalized_at.isoformat(),
             "jobcard_locked": bool(invoice.jobcard_id),
-            "ledger_entry_created": False,  # No ledger entry on finalization
+            "gold_ledger_created": gold_ledger_created,
+            "gold_transaction_created": gold_transaction_created,
+            "advance_gold_weight": invoice.gold_weight if invoice.gold_weight else 0,
+            "advance_gold_value": invoice.gold_value if invoice.gold_value else 0,
             "customer_type": invoice.customer_type,
-            "note": "Finance transactions NOT created - only on payment"
+            "note": "MODULE 3: Gold ledger & transaction created if advance gold present"
         }
     )
     
