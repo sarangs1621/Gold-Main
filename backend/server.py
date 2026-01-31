@@ -472,6 +472,7 @@ ROLE_PERMISSIONS = {
         'reports.view', 'reports.inventory.view', 'reports.finance.view', 'reports.gold.view',
         'audit.view',
         'returns.view', 'returns.create', 'returns.finalize', 'returns.delete',
+        'dashboard.finance.view',  # MODULE 9: Finance dashboard access
     ],
     'manager': [
         # Manager has most permissions except user deletion and audit logs
