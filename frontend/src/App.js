@@ -192,6 +192,30 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/finance-dashboard"
+            element={
+              <ProtectedRoute>
+                <PermissionProtectedRoute permission="dashboard.finance.view">
+                  <DashboardLayout>
+                    <FinanceDashboardPage />
+                  </DashboardLayout>
+                </PermissionProtectedRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/system-validation"
+            element={
+              <ProtectedRoute>
+                <PermissionProtectedRoute permission="dashboard.finance.view">
+                  <DashboardLayout>
+                    <SystemValidationPage />
+                  </DashboardLayout>
+                </PermissionProtectedRoute>
+              </ProtectedRoute>
+            }
+          />
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
