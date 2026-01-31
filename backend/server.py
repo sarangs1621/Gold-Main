@@ -10954,9 +10954,9 @@ async def create_return(
         if not items:
             raise HTTPException(status_code=400, detail="At least one item is required")
         
-        # Calculate totals from items
-        total_weight_grams = sum(float(item.get('weight_grams', 0)) for item in items)
-        total_amount = sum(float(item.get('amount', 0)) for item in items)
+        # Calculate totals from items using Decimal (NO FLOATS)
+        total_weight_grams = sum(Decimal(str(item.get('weight_grams', 0))) for item in items)
+        total_amount = sum(Decimal(str(item.get('amount', 0))) for item in items)
         
         # Validate against original amounts (prevent exceeding original)
         await validate_return_against_original(
@@ -10974,10 +10974,10 @@ async def create_return(
         
         # ========== STEP 3: CREATE DRAFT RETURN (NO FINALIZATION) ==========
         
-        # Get optional refund details (NOT validated at draft stage)
+        # Get optional refund details (NOT validated at draft stage) - Use Decimal (NO FLOATS)
         refund_mode = return_data.get('refund_mode')  # Can be None for draft
-        refund_money_amount = float(return_data.get('refund_money_amount', 0))
-        refund_gold_grams = float(return_data.get('refund_gold_grams', 0))
+        refund_money_amount = Decimal(str(return_data.get('refund_money_amount', 0))) if return_data.get('refund_money_amount') else Decimal('0.00')
+        refund_gold_grams = Decimal(str(return_data.get('refund_gold_grams', 0))) if return_data.get('refund_gold_grams') else Decimal('0.000')
         account_id = return_data.get('account_id')  # Can be None for draft
         
         # Create return object with DRAFT status (no finalization logic)
@@ -10991,13 +10991,13 @@ async def create_return(
             party_name=party_name,
             party_type=party_type,
             items=[ReturnItem(**item) for item in items],
-            total_weight_grams=round(total_weight_grams, 3),
-            total_amount=round(total_amount, 2),
+            total_weight_grams=total_weight_grams.quantize(Decimal('0.001')),
+            total_amount=total_amount.quantize(Decimal('0.01')),
             reason=return_data.get('reason'),
             # Refund details - optional at draft stage
             refund_mode=refund_mode,
-            refund_money_amount=round(refund_money_amount, 2) if refund_money_amount else 0.0,
-            refund_gold_grams=round(refund_gold_grams, 3) if refund_gold_grams else 0.0,
+            refund_money_amount=refund_money_amount.quantize(Decimal('0.01')),
+            refund_gold_grams=refund_gold_grams.quantize(Decimal('0.001')),
             refund_gold_purity=return_data.get('refund_gold_purity'),
             payment_mode=return_data.get('payment_mode'),
             account_id=account_id,
