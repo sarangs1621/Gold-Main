@@ -3964,100 +3964,152 @@ async def update_purchase(
     current_user: User = Depends(require_permission('purchases.create'))
 ):
     """
-    Update a purchase.
+    MODULE 4: Update a DRAFT purchase with 22K valuation.
     
-    Edit Rules:
-    - Allow edit when status = Draft or Partially Paid
-    - Block edit when locked = True (fully paid and finalized)
-    - This matches Invoice behavior for consistency
+    Edit Rules (NON-NEGOTIABLE):
+    - ✅ Allow edit when status = "draft" (not yet finalized)
+    - ❌ Block edit when finalized_at is set (immutable after finalization)
+    - ❌ Block edit when locked = True
+    
+    MODULE 4 Support:
+    - items[] array editing with 22K valuation
+    - conversion_factor changes (recalculates all items)
+    - Walk-in vendor updates
+    - Backward compatibility for legacy purchases
     """
     # Get existing purchase
     existing = await db.purchases.find_one({"id": purchase_id, "is_deleted": False})
     if not existing:
         raise HTTPException(status_code=404, detail="Purchase not found")
     
-    # Check if purchase is locked
+    # ========== MODULE 4: FINALIZATION SAFETY ==========
+    if existing.get("finalized_at") is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit finalized purchase. Finalized purchases are immutable to maintain audit integrity."
+        )
+    
     if existing.get("locked"):
         raise HTTPException(
             status_code=400,
-            detail="Cannot edit locked purchase. Purchase is finalized and fully paid. Locked purchases are immutable to maintain financial integrity."
+            detail="Cannot edit locked purchase. Locked purchases are immutable to maintain financial integrity."
         )
     
-    # Validate vendor if being updated
-    if "vendor_party_id" in updates:
-        vendor = await db.parties.find_one({"id": updates["vendor_party_id"], "is_deleted": False})
+    # ========== MODULE 4: VENDOR VALIDATION ==========
+    vendor_type = updates.get("vendor_type", existing.get("vendor_type", "saved"))
+    
+    if vendor_type == "saved":
+        # Saved vendor: Must have vendor_party_id and must be vendor type
+        vendor_party_id = updates.get("vendor_party_id", existing.get("vendor_party_id"))
+        if not vendor_party_id:
+            raise HTTPException(status_code=400, detail="vendor_party_id is required for saved vendors")
+        
+        vendor = await db.parties.find_one({"id": vendor_party_id, "is_deleted": False})
         if not vendor:
             raise HTTPException(status_code=404, detail="Vendor not found")
         if vendor.get("party_type") != "vendor":
             raise HTTPException(status_code=400, detail="Party must be a vendor type")
+        
+    elif vendor_type == "walk_in":
+        # Walk-in vendor: Must have walk_in_name
+        walk_in_name = updates.get("walk_in_name", existing.get("walk_in_name", "")).strip()
+        if not walk_in_name:
+            raise HTTPException(status_code=400, detail="walk_in_name is required for walk-in vendors")
+        updates["vendor_party_id"] = None  # Ensure it's None for walk-ins
     
-    # ========== CRITICAL VALIDATION: NEVER TRUST FRONTEND ==========
-    # Get current values or updated values
-    weight_grams = updates.get("weight_grams", existing.get("weight_grams", 0))
-    rate_per_gram = updates.get("rate_per_gram", existing.get("rate_per_gram", 0))
+    # ========== MODULE 4: ITEMS & CONVERSION FACTOR LOGIC ==========
+    # Check if this is a MODULE 4 purchase (has items[]) or legacy (has weight_grams)
+    has_items = "items" in updates or existing.get("items")
     
-    # Validate weight if provided
-    if "weight_grams" in updates:
+    if has_items:
+        # MODULE 4: New multi-item logic with 22K valuation
+        conversion_factor = updates.get("conversion_factor", existing.get("conversion_factor"))
+        
+        if conversion_factor is None:
+            raise HTTPException(status_code=400, detail="conversion_factor is required")
+        
         try:
-            weight_grams = float(updates["weight_grams"])
+            conversion_factor = float(conversion_factor)
         except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid weight value")
+            raise HTTPException(status_code=400, detail="Invalid conversion_factor value")
         
-        if weight_grams <= 0:
-            raise HTTPException(status_code=400, detail="Weight must be greater than 0")
+        # Validate conversion_factor is one of the allowed values
+        if conversion_factor not in [0.920, 0.917]:
+            raise HTTPException(status_code=400, detail="conversion_factor must be 0.920 or 0.917")
         
-        updates["weight_grams"] = round(weight_grams, 3)
-    
-    # Validate rate if provided
-    if "rate_per_gram" in updates:
-        try:
-            rate_per_gram = float(updates["rate_per_gram"])
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid rate value")
+        # Get items (from updates or existing)
+        items_data = updates.get("items", existing.get("items", []))
+        if not items_data or len(items_data) == 0:
+            raise HTTPException(status_code=400, detail="At least one item is required")
         
-        if rate_per_gram <= 0:
-            raise HTTPException(status_code=400, detail="Rate per gram must be greater than 0")
+        # Recalculate each item's amount using 22K valuation formula
+        validated_items = []
+        total_amount = Decimal('0')
+        total_weight = Decimal('0')
         
-        updates["rate_per_gram"] = round(rate_per_gram, 2)
-    
-    # RECALCULATE total_amount on backend (SINGLE SOURCE OF TRUTH)
-    # Never trust client-sent total_amount
-    calculated_total = round(float(weight_grams) * float(rate_per_gram), 2)
-    updates["amount_total"] = calculated_total
-    
-    # Validate paid amount
-    paid_amount = updates.get("paid_amount_money", existing.get("paid_amount_money", 0))
-    if "paid_amount_money" in updates:
-        try:
-            paid_amount = float(updates["paid_amount_money"])
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid paid amount value")
+        for idx, item_data in enumerate(items_data):
+            # Validate required fields
+            if not item_data.get("description"):
+                raise HTTPException(status_code=400, detail=f"Item {idx + 1}: description is required")
+            
+            # Validate and extract weight
+            try:
+                weight = Decimal(str(item_data.get("weight_grams", 0)))
+            except (ValueError, TypeError, decimal.InvalidOperation):
+                raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Invalid weight value")
+            
+            if weight <= 0:
+                raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Weight must be greater than 0")
+            
+            # Validate and extract entered_purity
+            try:
+                entered_purity = int(item_data.get("entered_purity", 916))
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Invalid purity value")
+            
+            if entered_purity < 1 or entered_purity > 999:
+                raise HTTPException(status_code=400, detail=f"Item {idx + 1}: Purity must be between 1 and 999")
+            
+            # ========== CRITICAL: 22K VALUATION FORMULA ==========
+            # amount = (weight × 916) ÷ conversion_factor
+            amount = (weight * Decimal('916')) / Decimal(str(conversion_factor))
+            amount = amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
+            
+            # Preserve or generate item ID
+            item_id = item_data.get("id", str(uuid.uuid4()))
+            
+            # Create validated item
+            validated_item = {
+                "id": item_id,
+                "description": item_data.get("description"),
+                "weight_grams": float(weight.quantize(Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)),
+                "entered_purity": entered_purity,
+                "calculated_amount": float(amount)
+            }
+            validated_items.append(validated_item)
+            
+            total_amount += amount
+            total_weight += weight
         
-        if paid_amount < 0:
-            raise HTTPException(status_code=400, detail="Paid amount cannot be negative")
+        # Round totals
+        total_amount = total_amount.quantize(Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
+        total_weight = total_weight.quantize(Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
         
-        if paid_amount > calculated_total:
-            raise HTTPException(status_code=400, detail=f"Paid amount ({paid_amount}) cannot exceed total amount ({calculated_total})")
+        # Set calculated values
+        updates["items"] = validated_items
+        updates["conversion_factor"] = conversion_factor
+        updates["amount_total"] = float(total_amount)
+        updates["balance_due_money"] = float(total_amount)  # Draft has no payments yet
+        updates["valuation_purity_fixed"] = 916
         
-        updates["paid_amount_money"] = round(paid_amount, 2)
-    
-    # Auto-calculate balance_due_money
-    updates["balance_due_money"] = round(calculated_total - float(paid_amount), 2)
-    
-    # Round gold settlement fields to 3 decimals
-    if "advance_in_gold_grams" in updates and updates["advance_in_gold_grams"] is not None:
-        updates["advance_in_gold_grams"] = round(float(updates["advance_in_gold_grams"]), 3)
-    if "exchange_in_gold_grams" in updates and updates["exchange_in_gold_grams"] is not None:
-        updates["exchange_in_gold_grams"] = round(float(updates["exchange_in_gold_grams"]), 3)
-    
-    # Validate account exists if payment made
-    if "paid_amount_money" in updates and updates["paid_amount_money"] > 0:
-        account_id = updates.get("account_id") or existing.get("account_id")
-        if not account_id:
-            raise HTTPException(status_code=400, detail="account_id is required when paid_amount_money > 0")
-        account = await db.accounts.find_one({"id": account_id, "is_deleted": False})
-        if not account:
-            raise HTTPException(status_code=404, detail="Payment account not found")
+    else:
+        # BACKWARD COMPATIBILITY: Legacy single-item purchase
+        # Keep existing logic but don't recalculate (read-only for legacy)
+        if "weight_grams" in updates or "rate_per_gram" in updates:
+            raise HTTPException(
+                status_code=400,
+                detail="Legacy purchases cannot be edited. Please create a new purchase instead."
+            )
     
     # Update purchase
     await db.purchases.update_one(
