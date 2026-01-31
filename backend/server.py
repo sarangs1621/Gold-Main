@@ -2367,47 +2367,6 @@ async def create_stock_movement(movement_data: dict, current_user: User = Depend
     
     return movement
 
-@api_router.delete("/inventory/movements/{movement_id}")    # Insert stock movement for audit trail
-    await db.stock_movements.insert_one(movement.model_dump())
-    
-    # Create audit log for manual inventory adjustment
-    await create_audit_log(
-        current_user.id,
-        current_user.full_name,
-        "inventory",
-        movement.id,
-        f"manual_{movement_type.lower().replace(' ', '_')}",
-        {
-            "movement_type": movement_type,
-            "header_name": header['name'],
-            "qty_delta": qty_delta,
-            "weight_delta": weight_delta,
-            "confirmation_reason": confirmation_reason
-        }
-    )
-    
-    # DIRECT UPDATE: Update header's current quantity and weight
-    new_qty = header.get('current_qty', 0) + qty_delta
-    new_weight = header.get('current_weight', 0) + weight_delta
-    
-    # Validate stock doesn't go negative (safety check, should not happen with positive deltas)
-    if new_qty < 0 or new_weight < 0:
-        # Delete the movement we just created
-        await db.stock_movements.delete_one({"id": movement.id})
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Insufficient stock. Available: {header.get('current_qty', 0)} qty, {header.get('current_weight', 0)}g. Requested: {abs(qty_delta)} qty, {abs(weight_delta)}g"
-        )
-    
-    await db.inventory_headers.update_one(
-        {"id": movement_data['header_id']},
-        {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
-    )
-    
-    await create_audit_log(current_user.id, current_user.full_name, "stock_movement", movement.id, "create", 
-                          changes={"movement_type": movement_type, "qty_delta": qty_delta, "weight_delta": weight_delta})
-    return movement
-
 @api_router.delete("/inventory/movements/{movement_id}")
 async def delete_stock_movement(movement_id: str, current_user: User = Depends(require_permission('inventory.adjust'))):
     """
