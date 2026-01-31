@@ -6364,37 +6364,34 @@ async def add_payment_to_invoice(
                         )
                         
                         if header:
-                            # Calculate new stock values
-                            current_qty = header.get('current_qty', 0)
-                            current_weight = header.get('current_weight', 0)
-                            new_qty = current_qty - item.qty
-                            new_weight = current_weight - item.weight
-                            
-                            # Check for insufficient stock
-                            if new_qty < 0 or new_weight < 0:
-                                gold_stock_errors.append(
-                                    f"{item.category}: Need {item.qty} qty/{item.weight}g, but only {current_qty} qty/{current_weight}g available"
-                                )
-                                continue
-                            
-                            # DIRECT UPDATE: Reduce from inventory header
-                            await db.inventory_headers.update_one(
-                                {"id": header['id']},
-                                {"$set": {"current_qty": new_qty, "current_weight": new_weight}}
+                            # MODULE 7: Validate stock availability using StockMovements (SSOT)
+                            is_valid, error_msg, available_weight, available_qty = await validate_stock_availability(
+                                header['id'],
+                                item.weight * item.qty,
+                                item.qty
                             )
                             
-                            # Create stock movement for audit trail
+                            if not is_valid:
+                                gold_stock_errors.append(error_msg)
+                                continue
+                            
+                            # MODULE 7: Create stock movement ONLY
+                            # DO NOT update inventory_headers - StockMovements is the Single Source of Truth
                             movement = StockMovement(
-                                movement_type="Stock OUT",
+                                movement_type="OUT",  # MODULE 7: Simplified taxonomy
+                                source_type="SALE",  # MODULE 7: Source tracking
+                                source_id=invoice.id,
                                 header_id=header['id'],
                                 header_name=header['name'],
                                 description=f"Invoice {invoice.invoice_number} - Auto-finalized (Gold Exchange Payment)",
-                                qty_delta=-item.qty,
-                                weight_delta=-item.weight,
+                                weight=Decimal(str(item.weight * item.qty)).quantize(Decimal('0.001')),
                                 purity=item.purity,
+                                created_by=current_user.id,
+                                # Legacy fields for backward compatibility
+                                qty_delta=-item.qty,
+                                weight_delta=-(item.weight * item.qty),
                                 reference_type="invoice",
-                                reference_id=invoice.id,
-                                created_by=current_user.id
+                                reference_id=invoice.id
                             )
                             await db.stock_movements.insert_one(movement.model_dump())
             
