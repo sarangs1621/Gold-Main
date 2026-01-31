@@ -4544,17 +4544,25 @@ async def finalize_purchase(purchase_id: str, current_user: User = Depends(requi
     
     finalize_time = datetime.now(timezone.utc)
     
+    # MODULE 7: Check idempotency - prevent duplicate stock movements
+    already_finalized = await check_finalize_idempotency("PURCHASE", purchase_id)
+    if already_finalized:
+        raise HTTPException(
+            status_code=400,
+            detail="Purchase has already been finalized. Stock movements already created."
+        )
+    
     # ========== OPERATION 1: Create Stock IN movements for each item ==========
     purity = 916  # Always 916
     header_name = f"Gold {purity // 41.6:.0f}K"  # 916 = 22K
     
     header = await db.inventory_headers.find_one({"name": header_name, "is_deleted": False})
     if not header:
-        # Create new inventory header
+        # Create new inventory header (metadata only)
         header = InventoryHeader(
             name=header_name,
-            current_qty=0,
-            current_weight=0,
+            current_qty=0,  # DEPRECATED field
+            current_weight=0,  # DEPRECATED field
             created_by=current_user.username
         )
         await db.inventory_headers.insert_one(header.model_dump())
@@ -4581,15 +4589,7 @@ async def finalize_purchase(purchase_id: str, current_user: User = Depends(requi
         )
         await db.stock_movements.insert_one(movement.model_dump())
     
-    # Update inventory header with total weight
-    header_id = header.get("id") if isinstance(header, dict) else header.id
-    await db.inventory_headers.update_one(
-        {"id": header_id},
-        {"$inc": {
-            "current_qty": len(purchase.items),
-            "current_weight": float(total_weight)
-        }}
-    )
+    # MODULE 7: DO NOT update inventory_headers - StockMovements is the Single Source of Truth
     
     # ========== OPERATION 2: Create GoldLedgerEntry OUT if advance_in_gold_grams > 0 ==========
     advance_gold = purchase.advance_in_gold_grams
