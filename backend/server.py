@@ -832,22 +832,65 @@ class InventoryHeader(BaseModel):
     is_deleted: bool = False
 
 class StockMovement(BaseModel):
+    """
+    MODULE 7: Stock Movement - Single Source of Truth for Inventory
+    
+    CRITICAL RULES (NON-NEGOTIABLE):
+    - All stock changes MUST flow through StockMovements
+    - StockMovements are IMMUTABLE once created
+    - Inventory = SUM(IN) - SUM(OUT) ± ADJUSTMENTS
+    - NO floats - use Decimal for weights (3 decimal precision)
+    
+    Movement Types:
+    - IN: Stock entering inventory (purchases)
+    - OUT: Stock leaving inventory (sales)
+    - ADJUSTMENT: Manual corrections (manual adjustments only)
+    
+    Source Types:
+    - SALE: Movement from invoice finalization
+    - PURCHASE: Movement from purchase finalization
+    - MANUAL: Manual adjustment by admin
+    
+    Audit Safety:
+    - source_type + source_id: Links to originating transaction
+    - audit_reference: Required reason for MANUAL adjustments
+    - created_by: User who created the movement
+    """
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))  # Alias for created_at
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))  # ISO 8601 UTC timestamp
-    movement_type: str
+    
+    # MODULE 7: Core movement classification
+    movement_type: str  # IN | OUT | ADJUSTMENT
+    source_type: str  # SALE | PURCHASE | MANUAL
+    source_id: Optional[str] = None  # ID of invoice, purchase, or manual adjustment record
+    
+    # Inventory item reference
+    item_id: Optional[str] = None  # Future: Link to inventory item master
     header_id: Optional[str] = None  # Optional - may be None if no matching inventory header
-    header_name: str
+    header_name: Optional[str] = None  # Optional - for display purposes
     description: Optional[str] = None
-    qty_delta: float
-    weight_delta: float
-    purity: int
-    reference_type: Optional[str] = None
-    reference_id: Optional[str] = None
-    created_by: str
+    
+    # Weight tracking (MODULE 7: Use Decimal for precision - NO FLOATS)
+    weight: Decimal = Field(default=Decimal('0.000'))  # Weight in grams, 3 decimal precision
+    purity: int  # Gold purity (e.g., 916 for 22K)
+    
+    # Legacy fields for backward compatibility (DEPRECATED - use weight instead)
+    qty_delta: Optional[float] = None  # DEPRECATED: Keep for old records
+    weight_delta: Optional[float] = None  # DEPRECATED: Keep for old records
+    
+    # Audit fields
+    audit_reference: Optional[str] = None  # REQUIRED for source_type=MANUAL (reason for adjustment)
     notes: Optional[str] = None
-    confirmation_reason: Optional[str] = None  # Required for manual adjustments
+    created_by: str
+    
+    # Legacy audit fields (DEPRECATED)
+    reference_type: Optional[str] = None  # DEPRECATED: Use source_type instead
+    reference_id: Optional[str] = None  # DEPRECATED: Use source_id instead
+    confirmation_reason: Optional[str] = None  # DEPRECATED: Use audit_reference instead
+    
+    # Soft delete
     is_deleted: bool = False
 
 class Party(BaseModel):
