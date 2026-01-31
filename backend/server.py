@@ -4721,6 +4721,13 @@ async def convert_jobcard_to_invoice(jobcard_id: str, invoice_data: dict, curren
         "created_by": current_user.id
     }
     
+    # MODULE 3: Add gold fields if provided in invoice_data
+    if invoice_data.get('gold_weight') and float(invoice_data.get('gold_weight', 0)) > 0:
+        invoice_dict["gold_weight"] = round(float(invoice_data['gold_weight']), 3)
+        invoice_dict["gold_purity"] = int(invoice_data.get('gold_purity', 916))
+        invoice_dict["gold_rate_per_gram"] = round(float(invoice_data.get('gold_rate_per_gram', 0)), 2)
+        invoice_dict["gold_value"] = round(float(invoice_data.get('gold_value', 0)), 2)
+    
     # Add customer-specific fields
     if customer_type == 'saved':
         invoice_dict["customer_id"] = customer_id
