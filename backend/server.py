@@ -12641,6 +12641,788 @@ async def get_gold_summary_ledger(
     }
 
 
+# ============================================================================
+# MODULE 8: LEDGER REPORT EXPORTS (Excel & PDF)
+# ============================================================================
+
+@api_router.get("/reports/ledger/stock-movements/export")
+async def export_stock_movements_excel(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    movement_type: Optional[str] = None,
+    source_type: Optional[str] = None,
+    header_id: Optional[str] = None,
+    purity: Optional[int] = None,
+    current_user: User = Depends(require_permission('reports.inventory.view'))
+):
+    """Export Stock Movements Ledger as Excel - ALL filtered records (no pagination)"""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    
+    # Default date range: Current month
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query (same as view endpoint)
+    query = {"is_deleted": False}
+    
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    
+    if movement_type:
+        query['movement_type'] = movement_type.upper()
+    if source_type:
+        query['source_type'] = source_type.upper()
+    if header_id:
+        query['header_id'] = header_id
+    if purity:
+        query['purity'] = purity
+    
+    # Fetch ALL movements (NO LIMIT)
+    movements = await db.stock_movements.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    movements = [decimal_to_float(m) for m in movements]
+    
+    # Calculate summary
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    for m in movements:
+        weight = Decimal(str(m.get('weight', 0)))
+        movement_type_val = m.get('movement_type', '')
+        if movement_type_val == 'IN':
+            total_in += weight
+        elif movement_type_val == 'OUT':
+            total_out += weight
+        elif movement_type_val == 'ADJUSTMENT':
+            if weight >= 0:
+                total_in += weight
+            else:
+                total_out += abs(weight)
+    
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Stock Movements"
+    
+    # Headers
+    headers = ["Date", "Item", "Movement Type", "Source Type", "Weight (g)", "Purity", "Entry ID", "Source ID", "Notes"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center")
+    
+    # Data
+    for row_idx, movement in enumerate(movements, 2):
+        movement_date = movement.get('date', '')
+        if isinstance(movement_date, str):
+            movement_date = movement_date[:10]
+        elif hasattr(movement_date, 'strftime'):
+            movement_date = movement_date.strftime('%Y-%m-%d')
+        
+        ws.cell(row=row_idx, column=1, value=movement_date)
+        ws.cell(row=row_idx, column=2, value=movement.get('header_name', 'Unknown'))
+        ws.cell(row=row_idx, column=3, value=movement.get('movement_type', ''))
+        ws.cell(row=row_idx, column=4, value=movement.get('source_type', ''))
+        ws.cell(row=row_idx, column=5, value=safe_float(movement.get('weight', 0)))
+        ws.cell(row=row_idx, column=6, value=movement.get('purity', ''))
+        ws.cell(row=row_idx, column=7, value=movement.get('id', '')[:12] if movement.get('id') else '')
+        ws.cell(row=row_idx, column=8, value=movement.get('source_id', '')[:12] if movement.get('source_id') else '')
+        ws.cell(row=row_idx, column=9, value=movement.get('notes', ''))
+    
+    # Add summary
+    last_row = len(movements) + 3
+    ws.cell(row=last_row, column=1, value="Summary:").font = Font(bold=True)
+    ws.cell(row=last_row + 1, column=1, value="Total IN:")
+    ws.cell(row=last_row + 1, column=2, value=float(total_in))
+    ws.cell(row=last_row + 2, column=1, value="Total OUT:")
+    ws.cell(row=last_row + 2, column=2, value=float(total_out))
+    ws.cell(row=last_row + 3, column=1, value="Net Weight:")
+    ws.cell(row=last_row + 3, column=2, value=float(total_in - total_out))
+    ws.cell(row=last_row + 4, column=1, value="Total Records:")
+    ws.cell(row=last_row + 4, column=2, value=len(movements))
+    
+    # Adjust column widths
+    for col in range(1, 10):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=stock_movements_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+
+@api_router.get("/reports/ledger/stock-movements/export-pdf")
+async def export_stock_movements_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    movement_type: Optional[str] = None,
+    source_type: Optional[str] = None,
+    header_id: Optional[str] = None,
+    purity: Optional[int] = None,
+    current_user: User = Depends(require_permission('reports.inventory.view'))
+):
+    """Export Stock Movements Ledger as PDF - ALL filtered records"""
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    
+    # Default date range
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    if movement_type:
+        query['movement_type'] = movement_type.upper()
+    if source_type:
+        query['source_type'] = source_type.upper()
+    if header_id:
+        query['header_id'] = header_id
+    if purity:
+        query['purity'] = purity
+    
+    # Fetch ALL movements
+    movements = await db.stock_movements.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    movements = [decimal_to_float(m) for m in movements]
+    
+    # Calculate summary
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    for m in movements:
+        weight = Decimal(str(m.get('weight', 0)))
+        movement_type_val = m.get('movement_type', '')
+        if movement_type_val == 'IN':
+            total_in += weight
+        elif movement_type_val == 'OUT':
+            total_out += weight
+        elif movement_type_val == 'ADJUSTMENT':
+            if weight >= 0:
+                total_in += weight
+            else:
+                total_out += abs(weight)
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1
+    )
+    elements.append(Paragraph("Stock Movements Ledger Report", title_style))
+    
+    # Date info
+    date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    if date_from or date_to:
+        date_str += f" | Period: {date_from[:10] if date_from else 'Start'} to {date_to[:10] if date_to else 'End'}"
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
+    
+    # Summary
+    summary_text = f"""<b>Summary:</b><br/>
+    Total IN: {float(total_in):.3f}g | Total OUT: {float(total_out):.3f}g | Net: {float(total_in - total_out):.3f}g | Records: {len(movements)}
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
+    
+    # Create table
+    table_data = [['Date', 'Item', 'Type', 'Source', 'Weight (g)', 'Purity']]
+    for m in movements:
+        movement_date = m.get('date', '')
+        if isinstance(movement_date, str):
+            movement_date = movement_date[:10]
+        elif hasattr(movement_date, 'strftime'):
+            movement_date = movement_date.strftime('%Y-%m-%d')
+        
+        table_data.append([
+            movement_date,
+            (m.get('header_name') or 'Unknown')[:20],
+            (m.get('movement_type') or '')[:8],
+            (m.get('source_type') or '')[:10],
+            f"{m.get('weight', 0):.3f}",
+            str(m.get('purity', ''))
+        ])
+    
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=stock_movements_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
+
+
+@api_router.get("/reports/ledger/transactions/export")
+async def export_transactions_ledger_excel(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    transaction_type: Optional[str] = None,
+    account_id: Optional[str] = None,
+    party_id: Optional[str] = None,
+    mode: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """Export Transaction Ledger as Excel - ALL filtered records (no pagination)"""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    
+    # Default date range
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    if transaction_type:
+        query['transaction_type'] = transaction_type.lower()
+    if account_id:
+        query['account_id'] = account_id
+    if party_id:
+        query['party_id'] = party_id
+    if mode:
+        query['mode'] = mode
+    if category:
+        query['category'] = category
+    
+    # Fetch ALL transactions (NO LIMIT)
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    transactions = [decimal_to_float(txn) for txn in transactions]
+    
+    # Calculate summary
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    for txn in transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        if txn.get('transaction_type') == 'credit':
+            total_credit += amount
+        elif txn.get('transaction_type') == 'debit':
+            total_debit += amount
+    
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Transactions"
+    
+    # Headers
+    headers = ["Date", "Txn #", "Type", "Account", "Party", "Amount (OMR)", "Mode", "Category", "Entry ID", "Notes"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center")
+    
+    # Data
+    for row_idx, txn in enumerate(transactions, 2):
+        txn_date = txn.get('date', '')
+        if isinstance(txn_date, str):
+            txn_date = txn_date[:10]
+        elif hasattr(txn_date, 'strftime'):
+            txn_date = txn_date.strftime('%Y-%m-%d')
+        
+        ws.cell(row=row_idx, column=1, value=txn_date)
+        ws.cell(row=row_idx, column=2, value=txn.get('transaction_number', ''))
+        ws.cell(row=row_idx, column=3, value=txn.get('transaction_type', '').upper())
+        ws.cell(row=row_idx, column=4, value=txn.get('account_name', ''))
+        ws.cell(row=row_idx, column=5, value=txn.get('party_name', ''))
+        ws.cell(row=row_idx, column=6, value=safe_float(txn.get('amount', 0)))
+        ws.cell(row=row_idx, column=7, value=txn.get('mode', ''))
+        ws.cell(row=row_idx, column=8, value=txn.get('category', ''))
+        ws.cell(row=row_idx, column=9, value=txn.get('id', '')[:12] if txn.get('id') else '')
+        ws.cell(row=row_idx, column=10, value=txn.get('notes', ''))
+    
+    # Add summary
+    last_row = len(transactions) + 3
+    ws.cell(row=last_row, column=1, value="Summary:").font = Font(bold=True)
+    ws.cell(row=last_row + 1, column=1, value="Total Credit:")
+    ws.cell(row=last_row + 1, column=2, value=float(total_credit))
+    ws.cell(row=last_row + 2, column=1, value="Total Debit:")
+    ws.cell(row=last_row + 2, column=2, value=float(total_debit))
+    ws.cell(row=last_row + 3, column=1, value="Net Flow:")
+    ws.cell(row=last_row + 3, column=2, value=float(total_credit - total_debit))
+    ws.cell(row=last_row + 4, column=1, value="Total Records:")
+    ws.cell(row=last_row + 4, column=2, value=len(transactions))
+    
+    # Adjust column widths
+    for col in range(1, 11):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=transactions_ledger_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+
+@api_router.get("/reports/ledger/transactions/export-pdf")
+async def export_transactions_ledger_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    transaction_type: Optional[str] = None,
+    account_id: Optional[str] = None,
+    party_id: Optional[str] = None,
+    mode: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.finance.view'))
+):
+    """Export Transaction Ledger as PDF - ALL filtered records"""
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    
+    # Default date range
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    if transaction_type:
+        query['transaction_type'] = transaction_type.lower()
+    if account_id:
+        query['account_id'] = account_id
+    if party_id:
+        query['party_id'] = party_id
+    if mode:
+        query['mode'] = mode
+    if category:
+        query['category'] = category
+    
+    # Fetch ALL transactions
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    transactions = [decimal_to_float(txn) for txn in transactions]
+    
+    # Calculate summary
+    total_credit = Decimal('0.00')
+    total_debit = Decimal('0.00')
+    for txn in transactions:
+        amount = Decimal(str(txn.get('amount', 0)))
+        if txn.get('transaction_type') == 'credit':
+            total_credit += amount
+        elif txn.get('transaction_type') == 'debit':
+            total_debit += amount
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1
+    )
+    elements.append(Paragraph("Transaction Ledger Report", title_style))
+    
+    # Date info
+    date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    if date_from or date_to:
+        date_str += f" | Period: {date_from[:10] if date_from else 'Start'} to {date_to[:10] if date_to else 'End'}"
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
+    
+    # Summary
+    summary_text = f"""<b>Summary:</b><br/>
+    Total Credit: {float(total_credit):.2f} OMR | Total Debit: {float(total_debit):.2f} OMR | Net Flow: {float(total_credit - total_debit):.2f} OMR | Records: {len(transactions)}
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
+    
+    # Create table
+    table_data = [['Date', 'Txn #', 'Type', 'Account', 'Party', 'Amount']]
+    for txn in transactions:
+        txn_date = txn.get('date', '')
+        if isinstance(txn_date, str):
+            txn_date = txn_date[:10]
+        elif hasattr(txn_date, 'strftime'):
+            txn_date = txn_date.strftime('%Y-%m-%d')
+        
+        table_data.append([
+            txn_date,
+            (txn.get('transaction_number') or '')[:12],
+            (txn.get('transaction_type') or '')[:6].upper(),
+            (txn.get('account_name') or '')[:20],
+            (txn.get('party_name') or 'N/A')[:18],
+            f"{txn.get('amount', 0):.2f}"
+        ])
+    
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=transactions_ledger_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
+
+
+@api_router.get("/reports/ledger/gold-movements/export")
+async def export_gold_movements_excel(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    type: Optional[str] = None,
+    party_id: Optional[str] = None,
+    purpose: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.gold.view'))
+):
+    """Export Gold Movements Ledger as Excel - ALL filtered records (no pagination)"""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    
+    # Default date range
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    if type:
+        query['type'] = type.upper()
+    if party_id:
+        query['party_id'] = party_id
+    if purpose:
+        query['purpose'] = purpose
+    
+    # Fetch ALL gold movements (NO LIMIT)
+    movements = await db.gold_ledger.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    movements = [decimal_to_float(m) for m in movements]
+    
+    # Calculate summary
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    for m in movements:
+        weight = Decimal(str(m.get('weight_grams', 0)))
+        if m.get('type') == 'IN':
+            total_in += weight
+        elif m.get('type') == 'OUT':
+            total_out += weight
+    
+    # Get party names for display
+    party_names = {}
+    if movements:
+        party_ids = list(set([m.get('party_id') for m in movements if m.get('party_id')]))
+        if party_ids:
+            parties = await db.parties.find({"id": {"$in": party_ids}, "is_deleted": False}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+            party_names = {p['id']: p['name'] for p in parties}
+    
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Gold Movements"
+    
+    # Headers
+    headers = ["Date", "Type", "Party", "Purpose", "Weight (g)", "Purity", "Ref Type", "Entry ID", "Ref ID", "Notes"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center")
+    
+    # Data
+    for row_idx, movement in enumerate(movements, 2):
+        movement_date = movement.get('date', '')
+        if isinstance(movement_date, str):
+            movement_date = movement_date[:10]
+        elif hasattr(movement_date, 'strftime'):
+            movement_date = movement_date.strftime('%Y-%m-%d')
+        
+        party_name = party_names.get(movement.get('party_id'), 'N/A') if movement.get('party_id') else 'Walk-in'
+        
+        ws.cell(row=row_idx, column=1, value=movement_date)
+        ws.cell(row=row_idx, column=2, value=movement.get('type', ''))
+        ws.cell(row=row_idx, column=3, value=party_name)
+        ws.cell(row=row_idx, column=4, value=movement.get('purpose', ''))
+        ws.cell(row=row_idx, column=5, value=safe_float(movement.get('weight_grams', 0)))
+        ws.cell(row=row_idx, column=6, value=movement.get('purity_entered', ''))
+        ws.cell(row=row_idx, column=7, value=movement.get('reference_type', ''))
+        ws.cell(row=row_idx, column=8, value=movement.get('id', '')[:12] if movement.get('id') else '')
+        ws.cell(row=row_idx, column=9, value=movement.get('reference_id', '')[:12] if movement.get('reference_id') else '')
+        ws.cell(row=row_idx, column=10, value=movement.get('notes', ''))
+    
+    # Add summary
+    last_row = len(movements) + 3
+    ws.cell(row=last_row, column=1, value="Summary:").font = Font(bold=True)
+    ws.cell(row=last_row + 1, column=1, value="Total IN:")
+    ws.cell(row=last_row + 1, column=2, value=float(total_in))
+    ws.cell(row=last_row + 2, column=1, value="Total OUT:")
+    ws.cell(row=last_row + 2, column=2, value=float(total_out))
+    ws.cell(row=last_row + 3, column=1, value="Net Gold:")
+    ws.cell(row=last_row + 3, column=2, value=float(total_in - total_out))
+    ws.cell(row=last_row + 4, column=1, value="Total Records:")
+    ws.cell(row=last_row + 4, column=2, value=len(movements))
+    
+    # Adjust column widths
+    for col in range(1, 11):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=gold_movements_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+
+@api_router.get("/reports/ledger/gold-movements/export-pdf")
+async def export_gold_movements_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    type: Optional[str] = None,
+    party_id: Optional[str] = None,
+    purpose: Optional[str] = None,
+    current_user: User = Depends(require_permission('reports.gold.view'))
+):
+    """Export Gold Movements Ledger as PDF - ALL filtered records"""
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    
+    # Default date range
+    if not date_from:
+        now = datetime.now(timezone.utc)
+        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if not date_to:
+        date_to = datetime.now(timezone.utc).isoformat()
+    
+    # Build query
+    query = {"is_deleted": False}
+    if date_from:
+        query['date'] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to:
+        end_dt = datetime.fromisoformat(date_to)
+        if 'date' in query:
+            query['date']['$lte'] = end_dt
+        else:
+            query['date'] = {"$lte": end_dt}
+    if type:
+        query['type'] = type.upper()
+    if party_id:
+        query['party_id'] = party_id
+    if purpose:
+        query['purpose'] = purpose
+    
+    # Fetch ALL gold movements
+    movements = await db.gold_ledger.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    movements = [decimal_to_float(m) for m in movements]
+    
+    # Calculate summary
+    total_in = Decimal('0.000')
+    total_out = Decimal('0.000')
+    for m in movements:
+        weight = Decimal(str(m.get('weight_grams', 0)))
+        if m.get('type') == 'IN':
+            total_in += weight
+        elif m.get('type') == 'OUT':
+            total_out += weight
+    
+    # Get party names
+    party_names = {}
+    if movements:
+        party_ids = list(set([m.get('party_id') for m in movements if m.get('party_id')]))
+        if party_ids:
+            parties = await db.parties.find({"id": {"$in": party_ids}, "is_deleted": False}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+            party_names = {p['id']: p['name'] for p in parties}
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1
+    )
+    elements.append(Paragraph("Gold Movement Ledger Report", title_style))
+    
+    # Date info
+    date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    if date_from or date_to:
+        date_str += f" | Period: {date_from[:10] if date_from else 'Start'} to {date_to[:10] if date_to else 'End'}"
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
+    
+    # Summary
+    summary_text = f"""<b>Summary:</b><br/>
+    Total IN: {float(total_in):.3f}g | Total OUT: {float(total_out):.3f}g | Net Gold: {float(total_in - total_out):.3f}g | Records: {len(movements)}
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
+    
+    # Create table
+    table_data = [['Date', 'Type', 'Party', 'Purpose', 'Weight (g)', 'Purity']]
+    for m in movements:
+        movement_date = m.get('date', '')
+        if isinstance(movement_date, str):
+            movement_date = movement_date[:10]
+        elif hasattr(movement_date, 'strftime'):
+            movement_date = movement_date.strftime('%Y-%m-%d')
+        
+        party_name = party_names.get(m.get('party_id'), 'N/A') if m.get('party_id') else 'Walk-in'
+        
+        table_data.append([
+            movement_date,
+            (m.get('type') or '')[:3],
+            party_name[:18],
+            (m.get('purpose') or '')[:12],
+            f"{m.get('weight_grams', 0):.3f}",
+            str(m.get('purity_entered', ''))
+        ])
+    
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=gold_movements_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
+
+
+
 # Health check endpoint (no authentication required)
 @api_router.get("/health")
 @limiter.limit("100/minute")  # General rate limit: 100 requests per minute per IP
