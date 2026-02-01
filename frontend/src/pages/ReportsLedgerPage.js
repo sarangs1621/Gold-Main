@@ -132,7 +132,7 @@ export default function ReportsLedgerPage() {
   // ============================================================================
   const loadInventoryHeaders = async () => {
     try {
-      const response = await API.get('/api/inventory-headers');
+      const response = await API.get('/api/inventory/headers');
       setInventoryHeaders(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Failed to load inventory headers:', error);
@@ -341,14 +341,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="inv-movement-type">Movement Type</Label>
                   <Select 
-                    value={inventoryFilters.movement_type} 
-                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, movement_type: value})}
+                    value={inventoryFilters.movement_type || undefined} 
+                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, movement_type: value || ''})}
                   >
                     <SelectTrigger id="inv-movement-type">
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Types</SelectItem>
                       <SelectItem value="IN">IN</SelectItem>
                       <SelectItem value="OUT">OUT</SelectItem>
                       <SelectItem value="ADJUSTMENT">ADJUSTMENT</SelectItem>
@@ -358,14 +357,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="inv-source-type">Source Type</Label>
                   <Select 
-                    value={inventoryFilters.source_type} 
-                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, source_type: value})}
+                    value={inventoryFilters.source_type || undefined} 
+                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, source_type: value || ''})}
                   >
                     <SelectTrigger id="inv-source-type">
                       <SelectValue placeholder="All Sources" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Sources</SelectItem>
                       <SelectItem value="SALE">SALE</SelectItem>
                       <SelectItem value="PURCHASE">PURCHASE</SelectItem>
                       <SelectItem value="MANUAL">MANUAL</SelectItem>
@@ -375,14 +373,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="inv-header">Item</Label>
                   <Select 
-                    value={inventoryFilters.header_id} 
-                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, header_id: value})}
+                    value={inventoryFilters.header_id || undefined} 
+                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, header_id: value || ''})}
                   >
                     <SelectTrigger id="inv-header">
                       <SelectValue placeholder="All Items" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Items</SelectItem>
                       {inventoryHeaders.map((header) => (
                         <SelectItem key={header.id} value={header.id}>
                           {header.name}
@@ -394,14 +391,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="inv-purity">Purity</Label>
                   <Select 
-                    value={inventoryFilters.purity} 
-                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, purity: value})}
+                    value={inventoryFilters.purity || undefined} 
+                    onValueChange={(value) => setInventoryFilters({...inventoryFilters, purity: value || ''})}
                   >
                     <SelectTrigger id="inv-purity">
                       <SelectValue placeholder="All Purities" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Purities</SelectItem>
                       <SelectItem value="916">916 (22K)</SelectItem>
                       <SelectItem value="995">995 (24K)</SelectItem>
                       <SelectItem value="999">999 (24K Fine)</SelectItem>
@@ -609,14 +605,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="fin-txn-type">Transaction Type</Label>
                   <Select 
-                    value={financeFilters.transaction_type} 
-                    onValueChange={(value) => setFinanceFilters({...financeFilters, transaction_type: value})}
+                    value={financeFilters.transaction_type || undefined} 
+                    onValueChange={(value) => setFinanceFilters({...financeFilters, transaction_type: value || ''})}
                   >
                     <SelectTrigger id="fin-txn-type">
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Types</SelectItem>
                       <SelectItem value="credit">Credit</SelectItem>
                       <SelectItem value="debit">Debit</SelectItem>
                     </SelectContent>
@@ -625,14 +620,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="fin-account">Account</Label>
                   <Select 
-                    value={financeFilters.account_id} 
-                    onValueChange={(value) => setFinanceFilters({...financeFilters, account_id: value})}
+                    value={financeFilters.account_id || undefined} 
+                    onValueChange={(value) => setFinanceFilters({...financeFilters, account_id: value || ''})}
                   >
                     <SelectTrigger id="fin-account">
                       <SelectValue placeholder="All Accounts" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Accounts</SelectItem>
                       {accounts.map((account) => (
                         <SelectItem key={account.id} value={account.id}>
                           {account.name}
@@ -644,14 +638,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="fin-party">Party</Label>
                   <Select 
-                    value={financeFilters.party_id} 
-                    onValueChange={(value) => setFinanceFilters({...financeFilters, party_id: value})}
+                    value={financeFilters.party_id || undefined} 
+                    onValueChange={(value) => setFinanceFilters({...financeFilters, party_id: value || ''})}
                   >
                     <SelectTrigger id="fin-party">
                       <SelectValue placeholder="All Parties" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Parties</SelectItem>
                       {parties.map((party) => (
                         <SelectItem key={party.id} value={party.id}>
                           {party.name}
@@ -663,14 +656,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="fin-mode">Payment Mode</Label>
                   <Select 
-                    value={financeFilters.mode} 
-                    onValueChange={(value) => setFinanceFilters({...financeFilters, mode: value})}
+                    value={financeFilters.mode || undefined} 
+                    onValueChange={(value) => setFinanceFilters({...financeFilters, mode: value || ''})}
                   >
                     <SelectTrigger id="fin-mode">
                       <SelectValue placeholder="All Modes" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Modes</SelectItem>
                       <SelectItem value="Cash">Cash</SelectItem>
                       <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
                       <SelectItem value="Card">Card</SelectItem>
@@ -879,14 +871,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="gold-type">Type</Label>
                   <Select 
-                    value={goldFilters.type} 
-                    onValueChange={(value) => setGoldFilters({...goldFilters, type: value})}
+                    value={goldFilters.type || undefined} 
+                    onValueChange={(value) => setGoldFilters({...goldFilters, type: value || ''})}
                   >
                     <SelectTrigger id="gold-type">
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Types</SelectItem>
                       <SelectItem value="IN">IN (Shop Receives)</SelectItem>
                       <SelectItem value="OUT">OUT (Shop Gives)</SelectItem>
                     </SelectContent>
@@ -895,14 +886,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="gold-party">Party</Label>
                   <Select 
-                    value={goldFilters.party_id} 
-                    onValueChange={(value) => setGoldFilters({...goldFilters, party_id: value})}
+                    value={goldFilters.party_id || undefined} 
+                    onValueChange={(value) => setGoldFilters({...goldFilters, party_id: value || ''})}
                   >
                     <SelectTrigger id="gold-party">
                       <SelectValue placeholder="All Parties" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Parties</SelectItem>
                       {parties.map((party) => (
                         <SelectItem key={party.id} value={party.id}>
                           {party.name}
@@ -914,14 +904,13 @@ export default function ReportsLedgerPage() {
                 <div>
                   <Label htmlFor="gold-purpose">Purpose</Label>
                   <Select 
-                    value={goldFilters.purpose} 
-                    onValueChange={(value) => setGoldFilters({...goldFilters, purpose: value})}
+                    value={goldFilters.purpose || undefined} 
+                    onValueChange={(value) => setGoldFilters({...goldFilters, purpose: value || ''})}
                   >
                     <SelectTrigger id="gold-purpose">
                       <SelectValue placeholder="All Purposes" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Purposes</SelectItem>
                       <SelectItem value="job_work">Job Work</SelectItem>
                       <SelectItem value="exchange">Exchange</SelectItem>
                       <SelectItem value="advance_gold">Advance Gold</SelectItem>

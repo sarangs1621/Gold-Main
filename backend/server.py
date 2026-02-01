@@ -11491,10 +11491,8 @@ async def get_stock_movements_ledger(
     movements_cursor = db.stock_movements.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
     movements = await movements_cursor.to_list(page_size)
     
-    # Convert Decimal128 to float for JSON serialization
-    for movement in movements:
-        if 'weight' in movement and isinstance(movement['weight'], Decimal128):
-            movement['weight'] = float(movement['weight'].to_decimal())
+    # Convert Decimal128 to float for JSON serialization (use helper function)
+    movements = [decimal_to_float(movement) for movement in movements]
     
     # Calculate summary from FULL filtered dataset (not just current page)
     all_movements = await db.stock_movements.find(query, {"_id": 0, "movement_type": 1, "weight": 1}).to_list(10000)
