@@ -10627,12 +10627,12 @@ async def export_sales_history_pdf(
     search: Optional[str] = None,
     current_user: User = Depends(require_permission('reports.view'))
 ):
-    """Export sales history report as PDF"""
-    from reportlab.lib.pagesizes import A4
+    """Export sales history report as PDF with ALL records (multi-page support)"""
+    from reportlab.lib.pagesizes = A4, landscape
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from io import BytesIO
     from fastapi.responses import StreamingResponse
     
@@ -10646,71 +10646,71 @@ async def export_sales_history_pdf(
     )
     
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     
-    # Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(inch, height - inch, "Sales History Report")
+    elements = []
+    styles = getSampleStyleSheet()
     
-    c.setFont("Helvetica", 10)
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph("Sales History Report", title_style))
+    
+    # Date info
     date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     if date_from or date_to:
         date_str += f" | Period: {date_from or 'Start'} to {date_to or 'End'}"
-    c.drawString(inch, height - inch - 0.3*inch, date_str)
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
     
     # Summary section
-    y_position = height - inch - 0.8*inch
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Summary")
-    y_position -= 0.3*inch
-    
-    c.setFont("Helvetica", 10)
     summary = data['summary']
-    c.drawString(inch, y_position, f"Total Invoices: {summary['total_invoices']}")
-    c.drawString(inch + 2.5*inch, y_position, f"Total Weight: {summary['total_weight']:.3f} g")
-    y_position -= 0.2*inch
-    c.drawString(inch, y_position, f"Total Sales: {summary['total_sales']:.2f} OMR")
-    y_position -= 0.5*inch
+    summary_text = f"""<b>Summary:</b><br/>
+    Total Invoices: {summary['total_invoices']} | Total Weight: {summary['total_weight']:.3f} g | Total Sales: {summary['total_sales']:.2f} OMR
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
     
-    # Table header
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Sales Records")
-    y_position -= 0.3*inch
-    
-    # Create table data
+    # Create table data - NO LIMIT, include ALL records
     table_data = [['Invoice #', 'Customer', 'Phone', 'Date', 'Weight (g)', 'Purity', 'Total (OMR)']]
     
-    # Add sales records (limit to 30 records per page for now)
-    for record in data['sales_records'][:30]:
+    for record in data['sales_records']:  # FIXED: Removed [:30] limit - now includes ALL records
         table_data.append([
             (record.get('invoice_id') or '')[:15],
-            (record.get('customer_name') or '')[:20],
-            (record.get('customer_phone') or '')[:12],
+            (record.get('customer_name') or '')[:25],
+            (record.get('customer_phone') or '')[:15],
             (record.get('date') or '')[:10],
             f"{record.get('total_weight_grams', 0):.2f}",
             record.get('purity_summary') or '',
             f"{record.get('grand_total', 0):.2f}"
         ])
     
-    # Create and style table
-    table = Table(table_data, colWidths=[1.0*inch, 1.3*inch, 0.9*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.9*inch])
+    # Create table with repeatRows for multi-page support
+    table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        ('FONTSIZE', (0, 1), (-1, -1), 7),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')]),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
     ]))
     
-    # Draw table
-    table.wrapOn(c, width, height)
-    table.drawOn(c, inch, y_position - len(table_data) * 0.25*inch)
+    elements.append(table)
     
-    c.save()
+    # Build PDF
+    doc.build(elements)
     buffer.seek(0)
     
     filename = f"sales_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
