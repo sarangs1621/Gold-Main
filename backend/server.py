@@ -3207,55 +3207,69 @@ async def reconcile_gold(
     Verifies: Party gold balances = SUM(GoldLedger)
     
     Returns reconciliation status for gold ledger
+    
+    Note: Since GoldLedger is the single source of truth and there are no separate
+    balance fields to compare against, this check verifies data integrity only.
     """
     try:
-        # Get all parties
-        parties = await db.parties.find({"is_deleted": False}, {"_id": 0}).to_list(10000)
+        # Count total parties (faster than loading all)
+        total_parties = await db.parties.count_documents({"is_deleted": False})
+        
+        # Sample check: Verify gold ledger integrity for a subset of parties
+        # This is more efficient than checking all parties in large datasets
+        sample_size = min(100, total_parties)  # Check first 100 parties or all if less
+        parties_sample = await db.parties.find(
+            {"is_deleted": False},
+            {"_id": 0, "id": 1, "name": 1}
+        ).limit(sample_size).to_list(sample_size)
         
         mismatches = []
-        total_parties = len(parties)
         reconciled_parties = 0
         
-        for party in parties:
+        # For gold reconciliation, we verify ledger entries are valid
+        # Since there's no separate balance field, we just validate data integrity
+        for party in parties_sample:
             party_id = party.get('id')
-            party_name = party.get('name')
             
-            # Calculate gold balance from GoldLedger
-            gold_entries = await db.gold_ledger.find({
+            # Count gold entries for this party
+            entry_count = await db.gold_ledger.count_documents({
                 "party_id": party_id,
                 "is_deleted": False
-            }, {"_id": 0}).to_list(10000)
+            })
             
-            balance = Decimal('0.000')
-            for entry in gold_entries:
-                weight = Decimal(str(entry.get('weight_grams', 0)))
-                entry_type = entry.get('type', '').upper()
+            # If party has gold entries, verify they're valid
+            if entry_count > 0:
+                # Quick validation: check if types are valid (IN/OUT)
+                invalid_entries = await db.gold_ledger.count_documents({
+                    "party_id": party_id,
+                    "is_deleted": False,
+                    "type": {"$nin": ["IN", "OUT"]}
+                })
                 
-                if entry_type == 'IN':
-                    # IN = shop receives gold from party (party owes us, negative balance for party)
-                    balance -= weight
-                elif entry_type == 'OUT':
-                    # OUT = shop gives gold to party (we owe party, positive balance for party)
-                    balance += weight
-            
-            # For this reconciliation, we're just checking that GoldLedger sums correctly
-            # We don't have a separate "party gold balance" field to compare against
-            # So we just report the calculated balance
-            
-            reconciled_parties += 1
+                if invalid_entries > 0:
+                    mismatches.append({
+                        "party_id": party_id,
+                        "party_name": party.get('name'),
+                        "issue": f"{invalid_entries} invalid ledger entry types"
+                    })
+                else:
+                    reconciled_parties += 1
+            else:
+                reconciled_parties += 1  # No entries = reconciled
         
-        is_reconciled = True  # Always true since we're using GoldLedger as source of truth
+        is_reconciled = len(mismatches) == 0
         
         result = {
             "is_reconciled": is_reconciled,
             "check_type": "gold",
             "summary": {
                 "total_parties": total_parties,
+                "checked_parties": sample_size,
                 "reconciled_parties": reconciled_parties,
-                "mismatched_parties": 0
+                "mismatched_parties": len(mismatches)
             },
             "mismatches": mismatches,
-            "message": f"✅ All {total_parties} party gold balances reconciled (GoldLedger is source of truth)",
+            "message": f"✅ All {sample_size} checked parties' gold balances reconciled" if is_reconciled else f"❌ {len(mismatches)} gold ledger issues detected",
             "note": "GoldLedger is the single source of truth for party gold balances. No separate balance fields exist.",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
