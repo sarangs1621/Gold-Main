@@ -10252,15 +10252,6 @@ async def export_transactions_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=transactions_report_{datetime.now().strftime('%Y%m%d')}.pdf"}
     )
-    
-    c.save()
-    buffer.seek(0)
-    
-    return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=transactions_report_{datetime.now().strftime('%Y%m%d')}.pdf"}
-    )
 
 
 @api_router.get("/reports/inventory-pdf")
