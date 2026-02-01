@@ -83,6 +83,13 @@ async def backup_accounting_data():
     print(f"  ✓ Backed up {len(gold_ledger)} gold ledger entries")
     
     # Calculate statistics
+    def safe_float(val):
+        """Convert Decimal128 or other types to float safely"""
+        try:
+            return float(str(val))
+        except:
+            return 0.0
+    
     stats = {
         "total_accounts": len(accounts),
         "total_transactions": len(transactions),
@@ -90,7 +97,7 @@ async def backup_accounting_data():
         "deleted_transactions": len([t for t in transactions if t.get('is_deleted', False)]),
         "total_invoices": len(invoices),
         "finalized_invoices": len([i for i in invoices if i.get('status') == 'finalized']),
-        "invoices_with_payments": len([i for i in invoices if i.get('paid_amount', 0) > 0]),
+        "invoices_with_payments": len([i for i in invoices if safe_float(i.get('paid_amount', 0)) > 0]),
     }
     backup_data["statistics"] = stats
     
