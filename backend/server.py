@@ -3021,6 +3021,8 @@ async def get_finance_dashboard(
 
 @api_router.get("/system/reconcile/finance")
 async def reconcile_finance(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     current_user: User = Depends(require_permission('dashboard.finance.view'))
 ):
     """
@@ -3036,11 +3038,37 @@ async def reconcile_finance(
     - message: Human-readable status
     """
     try:
-        # Get dashboard totals (what we show to users)
-        dashboard_data = await get_finance_dashboard(current_user=current_user)
+        # Get dashboard totals (what we show to users) with same date filters
+        dashboard_data = await get_finance_dashboard(
+            start_date=start_date,
+            end_date=end_date,
+            current_user=current_user
+        )
         
-        # Get direct aggregation from Transactions table
-        transactions = await db.transactions.find({"is_deleted": False}, {"_id": 0}).to_list(100000)
+        # Build same query for direct verification
+        query = {"is_deleted": False}
+        
+        # Apply same date filter as dashboard
+        if start_date or end_date:
+            date_query = {}
+            if start_date:
+                date_query["$gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                date_query["$lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            if date_query:
+                query["date"] = date_query
+        else:
+            # Default to current month (same as dashboard)
+            now = datetime.now(timezone.utc)
+            start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+            if now.month == 12:
+                end_of_month = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(seconds=1)
+            else:
+                end_of_month = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc) - timedelta(seconds=1)
+            query["date"] = {"$gte": start_of_month, "$lte": end_of_month}
+        
+        # Get direct aggregation from Transactions table with same filters
+        transactions = await db.transactions.find(query, {"_id": 0}).to_list(100000)
         
         actual_credit = Decimal('0.000')
         actual_debit = Decimal('0.000')
