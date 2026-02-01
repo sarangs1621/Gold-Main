@@ -4935,14 +4935,10 @@ async def add_payment_to_purchase(
         notes=payment_data.get('notes', f"Payment for purchase: {purchase.description}"),
         created_by=current_user.username
     )
-    await db.transactions.insert_one(payment_transaction.model_dump())
     
-    # Update account balance (money OUT from cash/bank)
-    delta = -payment_amount
-    await db.accounts.update_one(
-        {"id": account_id},
-        {"$inc": {"current_balance": delta}}
-    )
+    # Use helper function to create transaction with balance tracking
+    account_type = account.get('account_type', 'asset')
+    await create_transaction_with_balance(payment_transaction, account_type)
     
     # Update purchase with new payment info
     update_data = {
