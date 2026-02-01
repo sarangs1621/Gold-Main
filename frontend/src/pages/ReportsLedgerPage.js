@@ -610,9 +610,33 @@ export default function ReportsLedgerPage() {
             <CardTitle className="flex items-center justify-between">
               <span>Stock Movements (Ledger)</span>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled title="Export coming soon">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export (Soon)
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleExportInventory('excel')}
+                  disabled={exportingExcel || loading}
+                  data-testid="export-inventory-excel"
+                >
+                  {exportingExcel ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  )}
+                  Excel
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleExportInventory('pdf')}
+                  disabled={exportingPDF || loading}
+                  data-testid="export-inventory-pdf"
+                >
+                  {exportingPDF ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileText className="h-4 w-4 mr-2" />
+                  )}
+                  PDF
                 </Button>
               </div>
             </CardTitle>
