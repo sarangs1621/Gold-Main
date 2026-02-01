@@ -10071,12 +10071,12 @@ async def export_parties_pdf(
     party_type: Optional[str] = None,
     current_user: User = Depends(require_permission('reports.view'))
 ):
-    """Export parties report as PDF"""
-    from reportlab.lib.pagesizes import A4
+    """Export parties report as PDF with ALL parties (multi-page support)"""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from io import BytesIO
     from fastapi.responses import StreamingResponse
     
@@ -10088,47 +10088,57 @@ async def export_parties_pdf(
     )
     
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     
-    # Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(inch, height - inch, "Parties Report")
+    elements = []
+    styles = getSampleStyleSheet()
     
-    c.setFont("Helvetica", 10)
-    c.drawString(inch, height - inch - 0.3*inch, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph("Parties Report", title_style))
     
-    # Table
-    y_position = height - inch - 0.8*inch
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, f"Total Parties: {data['count']}")
-    y_position -= 0.4*inch
+    # Date info
+    date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Total Parties: {data['count']}"
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
     
+    # Create table data - NO LIMIT, include ALL parties
     table_data = [['Party Name', 'Type', 'Phone', 'Email', 'Outstanding']]
-    for party in data['parties'][:30]:
+    for party in data['parties']:  # FIXED: Removed [:30] limit - now includes ALL parties
         table_data.append([
-            party.get('name', '')[:25],
-            party.get('party_type', '')[:8],
-            party.get('phone', '')[:15],
-            party.get('email', '')[:20],
+            party.get('name', '')[:30],
+            party.get('party_type', '')[:10],
+            party.get('phone', '')[:18],
+            party.get('email', '')[:25],
             f"{party.get('outstanding', 0):.2f}"
         ])
     
-    table = Table(table_data, colWidths=[2*inch, 0.8*inch, 1.2*inch, 1.5*inch, 1*inch])
+    # Create table with repeatRows for multi-page support
+    table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
     ]))
     
-    table.wrapOn(c, width, height)
-    table.drawOn(c, inch, y_position - len(table_data) * 0.25*inch)
+    elements.append(table)
     
-    c.save()
+    # Build PDF
+    doc.build(elements)
     buffer.seek(0)
     
     return StreamingResponse(
