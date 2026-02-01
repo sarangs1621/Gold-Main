@@ -10156,12 +10156,12 @@ async def export_transactions_pdf(
     party_id: Optional[str] = None,
     current_user: User = Depends(require_permission('reports.view'))
 ):
-    """Export transactions report as PDF"""
-    from reportlab.lib.pagesizes import A4
+    """Export transactions report as PDF with ALL transactions (multi-page support)"""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from io import BytesIO
     from fastapi.responses import StreamingResponse
     
@@ -10177,41 +10177,40 @@ async def export_transactions_pdf(
     )
     
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     
-    # Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(inch, height - inch, "Transactions Report")
+    elements = []
+    styles = getSampleStyleSheet()
     
-    c.setFont("Helvetica", 10)
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph("Transactions Report", title_style))
+    
+    # Date info
     date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     if start_date or end_date:
         date_str += f" | Period: {start_date or 'Start'} to {end_date or 'End'}"
-    c.drawString(inch, height - inch - 0.3*inch, date_str)
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
     
-    # Summary
-    y_position = height - inch - 0.8*inch
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Summary")
-    y_position -= 0.3*inch
-    
-    c.setFont("Helvetica", 10)
+    # Summary section
     summary = data['summary']
-    c.drawString(inch, y_position, f"Total Credit: {summary['total_credit']:.3f}")
-    c.drawString(inch + 2.5*inch, y_position, f"Total Debit: {summary['total_debit']:.3f}")
-    y_position -= 0.2*inch
-    c.drawString(inch, y_position, f"Net Balance: {summary['net_balance']:.3f}")
-    c.drawString(inch + 2.5*inch, y_position, f"Count: {data['count']}")
-    y_position -= 0.5*inch
+    summary_text = f"""<b>Summary:</b><br/>
+    Total Credit: {summary['total_credit']:.3f} | Total Debit: {summary['total_debit']:.3f} | Net Balance: {summary['net_balance']:.3f} | Count: {data['count']}
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
     
-    # Table
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Transactions")
-    y_position -= 0.3*inch
-    
+    # Create table data - NO LIMIT, include ALL transactions
     table_data = [['TXN #', 'Date', 'Type', 'Account', 'Party', 'Amount']]
-    for txn in data['transactions'][:30]:
+    for txn in data['transactions']:  # FIXED: Removed [:30] limit - now includes ALL transactions
         txn_date = txn.get('date', '')
         if isinstance(txn_date, str):
             txn_date = txn_date[:10]
@@ -10221,25 +10220,38 @@ async def export_transactions_pdf(
         table_data.append([
             (txn.get('transaction_number') or '')[:15],
             txn_date,
-            (txn.get('transaction_type') or '')[:6],
-            (txn.get('account_name') or '')[:20],
-            (txn.get('party_name') or 'N/A')[:15],
+            (txn.get('transaction_type') or '')[:8],
+            (txn.get('account_name') or '')[:25],
+            (txn.get('party_name') or 'N/A')[:20],
             f"{txn.get('amount', 0):.2f}"
         ])
     
-    table = Table(table_data, colWidths=[1.2*inch, 0.9*inch, 0.7*inch, 1.5*inch, 1.2*inch, 0.8*inch])
+    # Create table with repeatRows for multi-page support
+    table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
     ]))
     
-    table.wrapOn(c, width, height)
-    table.drawOn(c, inch, y_position - len(table_data) * 0.25*inch)
+    elements.append(table)
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=transactions_report_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
     
     c.save()
     buffer.seek(0)
