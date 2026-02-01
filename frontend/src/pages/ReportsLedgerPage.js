@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import {
   Download,
   FileSpreadsheet,
+  FileText,
   Package,
   Wallet,
   Coins,
@@ -20,7 +21,8 @@ import {
   AlertCircle,
   TrendingUp,
   TrendingDown,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import { formatDate } from '../utils/dateTimeUtils';
