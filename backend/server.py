@@ -1246,6 +1246,11 @@ class Transaction(BaseModel):
     reference_id: Optional[str] = None  # UUID of the related invoice/jobcard
     created_by: str
     is_deleted: bool = False
+    # Balance tracking fields (added for ledger system)
+    balance_before: Optional[float] = None
+    balance_after: Optional[float] = None
+    has_balance: bool = False
+    idempotency_key: Optional[str] = None  # For manual transactions to prevent duplicates
 
 class DailyClosing(BaseModel):
     model_config = ConfigDict(extra="ignore")
