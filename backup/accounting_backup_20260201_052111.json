@@ -1,0 +1,11 @@
+{
+  "backup_timestamp": "2026-02-01T05:21:11.416937+00:00",
+  "backup_type": "accounting_full",
+  "collections": {
+    "accounts": [
+      {
+        "id": "c3b806a3-97ef-4222-92c9-d9181e5e6ac7",
+        "name": "jishnu",
+        "account_type": "expense",
+        "opening_balance": 500.0,
+        "current_balance": 
