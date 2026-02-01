@@ -3316,14 +3316,15 @@ async def get_validation_checklist(
             ]
         })
         
-        # Reconciliation Checks (actual validation)
+        # Reconciliation Checks (actual validation with timeout protection)
         try:
             finance_recon = await reconcile_finance(current_user=current_user)
             finance_status = "✅ PASS" if finance_recon['is_reconciled'] else "❌ FAIL"
             finance_passed = finance_recon['is_reconciled']
             if not finance_passed:
                 all_passed = False
-        except:
+        except Exception as e:
+            logging.error(f"Finance reconciliation check failed: {str(e)}")
             finance_status = "⚠️ ERROR"
             finance_passed = False
             all_passed = False
@@ -3334,7 +3335,8 @@ async def get_validation_checklist(
             inventory_passed = inventory_recon['is_reconciled']
             if not inventory_passed:
                 all_passed = False
-        except:
+        except Exception as e:
+            logging.error(f"Inventory reconciliation check failed: {str(e)}")
             inventory_status = "⚠️ ERROR"
             inventory_passed = False
             all_passed = False
@@ -3345,7 +3347,8 @@ async def get_validation_checklist(
             gold_passed = gold_recon['is_reconciled']
             if not gold_passed:
                 all_passed = False
-        except:
+        except Exception as e:
+            logging.error(f"Gold reconciliation check failed: {str(e)}")
             gold_status = "⚠️ ERROR"
             gold_passed = False
             all_passed = False
