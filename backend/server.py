@@ -6844,14 +6844,10 @@ async def finalize_invoice(invoice_id: str, current_user: User = Depends(require
             reference_id=invoice.id,
             created_by=current_user.id
         )
-        await db.transactions.insert_one(transaction.model_dump())
-        gold_transaction_created = True
         
-        # Update account balance (DEBIT increases asset balance)
-        await db.accounts.update_one(
-            {"id": gold_account['id']},
-            {"$inc": {"current_balance": gold_value}}
-        )
+        # Use helper function to create transaction with balance tracking
+        await create_transaction_with_balance(transaction, gold_account['account_type'])
+        gold_transaction_created = True
         
         # Update invoice paid_amount and balance_due
         # Gold value counts as partial payment
