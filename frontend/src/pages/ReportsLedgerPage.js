@@ -48,6 +48,8 @@ export default function ReportsLedgerPage() {
   const [activeTab, setActiveTab] = useState('inventory');
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   // Permissions
   const hasInventoryPermission = usePermission('reports.inventory.view');
