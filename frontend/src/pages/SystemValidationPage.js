@@ -46,10 +46,18 @@ export default function SystemValidationPage() {
     }
   };
   
-  if (loading && !validationData) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+  
+  if (!validationData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">No validation data available</p>
       </div>
     );
   }
