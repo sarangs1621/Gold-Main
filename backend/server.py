@@ -9142,6 +9142,9 @@ async def view_invoices_report(
     
     invoices = await db.invoices.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(10000)
     
+    # Convert Decimal128 to float for JSON serialization
+    invoices = [decimal_to_float(inv) for inv in invoices]
+    
     # Calculate totals
     total_amount = sum(safe_float(inv.get('grand_total', 0)) for inv in invoices)
     total_paid = sum(safe_float(inv.get('paid_amount', 0)) for inv in invoices)
@@ -9199,6 +9202,9 @@ async def view_transactions_report(
         sort_direction = -1
     
     transactions = await db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(10000)
+    
+    # Convert Decimal128 to float for JSON serialization
+    transactions = [decimal_to_float(txn) for txn in transactions]
     
     # Calculate totals
     total_credit = sum(safe_float(txn.get('amount', 0)) for txn in transactions if txn.get('transaction_type') == 'credit')
@@ -9555,12 +9561,18 @@ async def get_outstanding_report(
     # Get all invoices
     invoices = await db.invoices.find(invoice_query, {"_id": 0}).to_list(10000)
     
+    # Convert Decimal128 to float for JSON serialization
+    invoices = [decimal_to_float(inv) for inv in invoices]
+    
     # Get all transactions for payment tracking
     # CRITICAL FIX: Include "Purchase" category for vendor payables from purchase finalization
     transactions = await db.transactions.find(
         {"is_deleted": False, "category": {"$in": ["Sales Invoice", "Purchase Invoice", "Purchase"]}},
         {"_id": 0}
     ).to_list(10000)
+    
+    # Convert Decimal128 to float for JSON serialization
+    transactions = [decimal_to_float(txn) for txn in transactions]
     
     # Calculate today for overdue calculations
     today = datetime.now(timezone.utc)
@@ -11724,10 +11736,8 @@ async def get_manual_adjustments_ledger(
     adjustments_cursor = db.stock_movements.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
     adjustments = await adjustments_cursor.to_list(page_size)
     
-    # Convert Decimal128
-    for adj in adjustments:
-        if 'weight' in adj and isinstance(adj['weight'], Decimal128):
-            adj['weight'] = float(adj['weight'].to_decimal())
+    # Convert Decimal128 to float for JSON serialization
+    adjustments = [decimal_to_float(adj) for adj in adjustments]
     
     return {
         "adjustments": adjustments,
@@ -11829,6 +11839,9 @@ async def get_transactions_ledger(
     # Fetch transactions
     transactions_cursor = db.transactions.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
     transactions = await transactions_cursor.to_list(page_size)
+    
+    # Convert Decimal128 to float for JSON serialization
+    transactions = [decimal_to_float(txn) for txn in transactions]
     
     # Calculate summary from FULL filtered dataset
     all_transactions = await db.transactions.find(query, {"_id": 0, "transaction_type": 1, "amount": 1}).to_list(10000)
@@ -11933,6 +11946,10 @@ async def get_cash_flow_ledger(
     # Fetch cash transactions
     transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
     
+    # Convert Decimal128 to float for JSON serialization
+    transactions = [decimal_to_float(txn) for txn in transactions]
+    cash_accounts = [decimal_to_float(acc) for acc in cash_accounts]
+    
     # Calculate totals
     total_credit = Decimal('0.00')
     total_debit = Decimal('0.00')
@@ -12026,6 +12043,10 @@ async def get_bank_flow_ledger(
     
     # Fetch bank transactions
     transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
+    
+    # Convert Decimal128 to float for JSON serialization
+    transactions = [decimal_to_float(txn) for txn in transactions]
+    bank_accounts = [decimal_to_float(acc) for acc in bank_accounts]
     
     # Calculate totals
     total_credit = Decimal('0.00')
@@ -12275,6 +12296,9 @@ async def get_gold_movements_ledger(
     # Fetch gold movements
     movements_cursor = db.gold_ledger.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
     movements = await movements_cursor.to_list(page_size)
+    
+    # Convert Decimal128 to float for JSON serialization
+    movements = [decimal_to_float(m) for m in movements]
     
     # Calculate summary from FULL filtered dataset
     all_movements = await db.gold_ledger.find(query, {"_id": 0, "type": 1, "weight_grams": 1}).to_list(10000)
