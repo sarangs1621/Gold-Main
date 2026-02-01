@@ -5449,7 +5449,10 @@ async def finalize_purchase(purchase_id: str, current_user: User = Depends(requi
         notes=f"Vendor payable for purchase: {purchase.description} ({float(total_weight)}g, 22K valuation, CF: {purchase.conversion_factor})",
         created_by=current_user.username
     )
-    await db.transactions.insert_one(payable_transaction.model_dump())
+    
+    # Use helper function to create transaction with balance tracking
+    purchases_account_type = purchases_account.get('account_type') if isinstance(purchases_account, dict) else purchases_account.account_type
+    await create_transaction_with_balance(payable_transaction, purchases_account_type)
     
     # ========== UPDATE PURCHASE: Set finalized status ==========
     update_data = {
