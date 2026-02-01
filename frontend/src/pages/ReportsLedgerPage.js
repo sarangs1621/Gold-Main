@@ -282,6 +282,160 @@ export default function ReportsLedgerPage() {
   };
 
   // ============================================================================
+  // EXPORT HANDLERS
+  // ============================================================================
+  
+  const handleExportInventory = async (format) => {
+    if (format === 'excel') {
+      setExportingExcel(true);
+    } else {
+      setExportingPDF(true);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (inventoryFilters.date_from) params.append('date_from', inventoryFilters.date_from);
+      if (inventoryFilters.date_to) params.append('date_to', inventoryFilters.date_to);
+      if (inventoryFilters.movement_type) params.append('movement_type', inventoryFilters.movement_type);
+      if (inventoryFilters.source_type) params.append('source_type', inventoryFilters.source_type);
+      if (inventoryFilters.header_id) params.append('header_id', inventoryFilters.header_id);
+      if (inventoryFilters.purity) params.append('purity', inventoryFilters.purity);
+
+      const endpoint = format === 'excel' 
+        ? `/api/reports/ledger/stock-movements/export?${params}`
+        : `/api/reports/ledger/stock-movements/export-pdf?${params}`;
+
+      const response = await API.get(endpoint, { responseType: 'blob' });
+      
+      const blob = new Blob([response.data], {
+        type: format === 'excel' 
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/pdf'
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `stock_movements_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Inventory report exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error(`Failed to export inventory report`);
+    } finally {
+      if (format === 'excel') {
+        setExportingExcel(false);
+      } else {
+        setExportingPDF(false);
+      }
+    }
+  };
+
+  const handleExportFinance = async (format) => {
+    if (format === 'excel') {
+      setExportingExcel(true);
+    } else {
+      setExportingPDF(true);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (financeFilters.date_from) params.append('date_from', financeFilters.date_from);
+      if (financeFilters.date_to) params.append('date_to', financeFilters.date_to);
+      if (financeFilters.transaction_type) params.append('transaction_type', financeFilters.transaction_type);
+      if (financeFilters.account_id) params.append('account_id', financeFilters.account_id);
+      if (financeFilters.party_id) params.append('party_id', financeFilters.party_id);
+      if (financeFilters.mode) params.append('mode', financeFilters.mode);
+      if (financeFilters.category) params.append('category', financeFilters.category);
+
+      const endpoint = format === 'excel' 
+        ? `/api/reports/ledger/transactions/export?${params}`
+        : `/api/reports/ledger/transactions/export-pdf?${params}`;
+
+      const response = await API.get(endpoint, { responseType: 'blob' });
+      
+      const blob = new Blob([response.data], {
+        type: format === 'excel' 
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/pdf'
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `transactions_ledger_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Finance report exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error(`Failed to export finance report`);
+    } finally {
+      if (format === 'excel') {
+        setExportingExcel(false);
+      } else {
+        setExportingPDF(false);
+      }
+    }
+  };
+
+  const handleExportGold = async (format) => {
+    if (format === 'excel') {
+      setExportingExcel(true);
+    } else {
+      setExportingPDF(true);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (goldFilters.date_from) params.append('date_from', goldFilters.date_from);
+      if (goldFilters.date_to) params.append('date_to', goldFilters.date_to);
+      if (goldFilters.type) params.append('type', goldFilters.type);
+      if (goldFilters.party_id) params.append('party_id', goldFilters.party_id);
+      if (goldFilters.purpose) params.append('purpose', goldFilters.purpose);
+
+      const endpoint = format === 'excel' 
+        ? `/api/reports/ledger/gold-movements/export?${params}`
+        : `/api/reports/ledger/gold-movements/export-pdf?${params}`;
+
+      const response = await API.get(endpoint, { responseType: 'blob' });
+      
+      const blob = new Blob([response.data], {
+        type: format === 'excel' 
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/pdf'
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gold_movements_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Gold report exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error(`Failed to export gold report`);
+    } finally {
+      if (format === 'excel') {
+        setExportingExcel(false);
+      } else {
+        setExportingPDF(false);
+      }
+    }
+  };
+
+  // ============================================================================
   // RENDER: INVENTORY TAB
   // ============================================================================
   const renderInventoryTab = () => {
