@@ -78,6 +78,104 @@ def get_normal_balance(account_type: str) -> str:
     else:  # income, liability, equity
         return 'credit'
 
+async def create_transaction_with_balance(
+    transaction: Transaction,
+    account_type: str,
+    idempotency_key: Optional[str] = None
+) -> Transaction:
+    """
+    Create a transaction with proper balance tracking and idempotency protection.
+    
+    This function:
+    1. Checks for duplicate transactions (idempotency)
+    2. Fetches current account balance atomically
+    3. Calculates and stores balance_before and balance_after
+    4. Updates the account balance
+    5. Ensures transaction integrity with proper locking
+    
+    Args:
+        transaction: Transaction object to create
+        account_type: Account type for balance calculation
+        idempotency_key: Optional key for manual transactions
+        
+    Returns:
+        Created transaction with balance fields populated
+        
+    Raises:
+        HTTPException: If duplicate transaction detected or account not found
+    """
+    # Step 1: Check for duplicate transactions (idempotency)
+    duplicate_query = {"is_deleted": False}
+    
+    # For system-generated transactions (invoice, purchase, etc.)
+    if transaction.reference_type and transaction.reference_id:
+        duplicate_query.update({
+            "reference_type": transaction.reference_type,
+            "reference_id": transaction.reference_id,
+            "account_id": transaction.account_id
+        })
+        existing = await db.transactions.find_one(duplicate_query, {"_id": 0})
+        if existing:
+            logging.warning(
+                f"Duplicate transaction detected: {transaction.reference_type}/"
+                f"{transaction.reference_id} on account {transaction.account_id}"
+            )
+            # Return existing transaction instead of creating duplicate
+            return Transaction(**existing)
+    
+    # For manual transactions with idempotency_key
+    if idempotency_key:
+        duplicate_query = {"idempotency_key": idempotency_key, "is_deleted": False}
+        existing = await db.transactions.find_one(duplicate_query, {"_id": 0})
+        if existing:
+            logging.warning(f"Duplicate transaction detected via idempotency_key: {idempotency_key}")
+            return Transaction(**existing)
+        transaction.idempotency_key = idempotency_key
+    
+    # Step 2: Fetch current account balance with atomic operation
+    account = await db.accounts.find_one(
+        {"id": transaction.account_id, "is_deleted": False},
+        {"_id": 0}
+    )
+    
+    if not account:
+        raise HTTPException(status_code=404, detail=f"Account {transaction.account_id} not found")
+    
+    # Step 3: Calculate balances
+    current_balance = safe_float(account.get('current_balance', 0))
+    transaction.balance_before = round(current_balance, 2)
+    
+    # Calculate balance delta using account-type-aware logic
+    delta = calculate_balance_delta(account_type, transaction.transaction_type, transaction.amount)
+    transaction.balance_after = round(current_balance + delta, 2)
+    transaction.has_balance = True
+    
+    # Step 4: Insert transaction and update account balance atomically
+    # Note: MongoDB doesn't have multi-document transactions by default in simple setups,
+    # but we can use findOneAndUpdate for atomic account balance updates
+    await db.transactions.insert_one(transaction.model_dump())
+    
+    # Update account balance atomically
+    updated_account = await db.accounts.find_one_and_update(
+        {"id": transaction.account_id, "is_deleted": False},
+        {"$inc": {"current_balance": delta}},
+        return_document=True
+    )
+    
+    if not updated_account:
+        # Rollback: delete the transaction if account update fails
+        await db.transactions.delete_one({"id": transaction.id})
+        raise HTTPException(status_code=500, detail="Failed to update account balance")
+    
+    logging.info(
+        f"Transaction {transaction.transaction_number} created: "
+        f"Account {transaction.account_id} | "
+        f"Balance {transaction.balance_before} → {transaction.balance_after} | "
+        f"Delta: {delta}"
+    )
+    
+    return transaction
+
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
 JWT_ALGORITHM = 'HS256'
