@@ -7400,14 +7400,8 @@ async def add_payment_to_invoice(
             created_by=current_user.id
         )
         
-        # Insert debit transaction
-        await db.transactions.insert_one(debit_transaction.model_dump())
-        
-        # Update Cash/Bank account balance (increase for debit on asset)
-        await db.accounts.update_one(
-            {"id": payment_data['account_id']},
-            {"$inc": {"current_balance": payment_amount}}
-        )
+        # Use helper function to create transaction with balance tracking
+        await create_transaction_with_balance(debit_transaction, account['account_type'])
         
         # Transaction 2: CREDIT Sales Income (INCOME) - Revenue recognized
         # Get or create Sales Income account
@@ -7441,14 +7435,8 @@ async def add_payment_to_invoice(
             created_by=current_user.id
         )
         
-        # Insert credit transaction
-        await db.transactions.insert_one(credit_transaction.model_dump())
-        
-        # Update Sales Income account balance (increase for credit on income)
-        await db.accounts.update_one(
-            {"id": sales_account['id']},
-            {"$inc": {"current_balance": payment_amount}}
-        )
+        # Use helper function to create transaction with balance tracking
+        await create_transaction_with_balance(credit_transaction, sales_account['account_type'])
         
         # Update invoice payment details
         new_payment_status = "paid" if new_balance_due < 0.01 else "partial"
