@@ -556,10 +556,10 @@ const loadData = useCallback(async () => {
                         {txn.transaction_type === 'credit' ? '+' : '-'}{formatCurrency(txn.amount)}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm text-muted-foreground">
-                        {txn.balance_before ? formatCurrency(txn.balance_before) : 'N/A'}
+                        {txn.balance_before !== null && txn.balance_before !== undefined ? formatCurrency(txn.balance_before) : 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm font-semibold">
-                        {txn.balance_after ? formatCurrency(txn.balance_after) : 'N/A'}
+                        {txn.balance_after !== null && txn.balance_after !== undefined ? formatCurrency(txn.balance_after) : 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Button
