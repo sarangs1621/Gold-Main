@@ -13652,13 +13652,9 @@ async def finalize_return(
                     reference_id=return_id,
                     created_by=current_user.id
                 )
-                await db.transactions.insert_one(transaction.model_dump())
                 
-                # Update Cash/Bank account balance (refund out = decrease balance)
-                await db.accounts.update_one(
-                    {"id": account_id},
-                    {"$inc": {"current_balance": Decimal128(Decimal(str(-refund_money_amount)).quantize(Decimal('0.01')))}}
-                )
+                # Use helper function to create transaction with balance tracking
+                await create_transaction_with_balance(transaction, account.get('account_type', 'asset'))
             
             # 2. Create gold refund (GoldLedgerEntry - OUT)
             if refund_mode in ['gold', 'mixed'] and refund_gold_grams > 0:
