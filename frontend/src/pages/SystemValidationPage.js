@@ -11,6 +11,7 @@ export default function SystemValidationPage() {
   const [inventoryRecon, setInventoryRecon] = useState(null);
   const [goldRecon, setGoldRecon] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
     loadValidationData();
