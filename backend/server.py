@@ -526,6 +526,17 @@ def float_to_decimal128(value):
         return None
     return Decimal128(Decimal(str(value)))
 
+def safe_float(value):
+    """
+    Safely convert any numeric value to float, handling Decimal128 from MongoDB.
+    Used in sum() operations to prevent TypeError when mixing float and Decimal128.
+    """
+    if isinstance(value, Decimal128):
+        return float(value.to_decimal())
+    elif isinstance(value, Decimal):
+        return float(value)
+    return float(value) if value else 0.0
+
 def convert_return_to_decimal(return_data: dict) -> dict:
     """
     Convert Decimal values in return data to Decimal128 for MongoDB storage.
@@ -2822,15 +2833,15 @@ async def get_dashboard(current_user: User = Depends(require_permission('reports
         # Get inventory headers count and totals
         headers = await db.inventory_headers.find({"is_deleted": False}, {"_id": 0}).to_list(1000)
         total_headers = len(headers)
-        total_stock_weight = sum(h.get('current_weight', 0) for h in headers)
-        total_stock_qty = sum(h.get('current_qty', 0) for h in headers)
+        total_stock_weight = sum(safe_float(h.get('current_weight', 0)) for h in headers)
+        total_stock_qty = sum(safe_float(h.get('current_qty', 0)) for h in headers)
         
         # Get outstanding summary
         invoices = await db.invoices.find(
             {"is_deleted": False, "payment_status": {"$ne": "paid"}}, 
             {"_id": 0}
         ).to_list(10000)
-        total_outstanding = sum(inv.get('balance_due', 0) for inv in invoices)
+        total_outstanding = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
         
         # Get low stock items (qty < 5)
         low_stock_items = len([h for h in headers if h.get('current_qty', 0) < 5])
@@ -8762,19 +8773,19 @@ async def export_invoices(
     # Calculate totals
     total_invoices = len(invoices)
     metal_total = sum(
-        item.get('gold_value', 0) 
+        safe_float(item.get('gold_value', 0))
         for inv in invoices 
         for item in inv.get('items', [])
     )
     making_total = sum(
-        item.get('making_value', 0) 
+        safe_float(item.get('making_value', 0))
         for inv in invoices 
         for item in inv.get('items', [])
     )
-    vat_total = sum(inv.get('vat_total', 0) for inv in invoices)
-    grand_total = sum(inv.get('grand_total', 0) for inv in invoices)
-    paid_total = sum(inv.get('paid_amount', 0) for inv in invoices)
-    outstanding_total = sum(inv.get('balance_due', 0) for inv in invoices)
+    vat_total = sum(safe_float(inv.get('vat_total', 0)) for inv in invoices)
+    grand_total = sum(safe_float(inv.get('grand_total', 0)) for inv in invoices)
+    paid_total = sum(safe_float(inv.get('paid_amount', 0)) for inv in invoices)
+    outstanding_total = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
     
     # Style for totals sheet
     title_font = Font(bold=True, size=14)
@@ -9072,7 +9083,7 @@ async def view_parties_report(
             {"customer_id": party['id'], "is_deleted": False},
             {"_id": 0, "balance_due": 1}
         ).to_list(1000)
-        party['outstanding'] = sum(inv.get('balance_due', 0) for inv in invoices)
+        party['outstanding'] = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
     
     # Apply sorting
     if sort_by == "outstanding_desc":
@@ -9132,9 +9143,9 @@ async def view_invoices_report(
     invoices = await db.invoices.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(10000)
     
     # Calculate totals
-    total_amount = sum(inv.get('grand_total', 0) for inv in invoices)
-    total_paid = sum(inv.get('paid_amount', 0) for inv in invoices)
-    total_balance = sum(inv.get('balance_due', 0) for inv in invoices)
+    total_amount = sum(safe_float(inv.get('grand_total', 0)) for inv in invoices)
+    total_paid = sum(safe_float(inv.get('paid_amount', 0)) for inv in invoices)
+    total_balance = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
     
     return {
         "invoices": invoices,
@@ -9190,8 +9201,8 @@ async def view_transactions_report(
     transactions = await db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(10000)
     
     # Calculate totals
-    total_credit = sum(txn.get('amount', 0) for txn in transactions if txn.get('transaction_type') == 'credit')
-    total_debit = sum(txn.get('amount', 0) for txn in transactions if txn.get('transaction_type') == 'debit')
+    total_credit = sum(safe_float(txn.get('amount', 0)) for txn in transactions if txn.get('transaction_type') == 'credit')
+    total_debit = sum(safe_float(txn.get('amount', 0)) for txn in transactions if txn.get('transaction_type') == 'debit')
     
     return {
         "transactions": transactions,
@@ -9260,9 +9271,9 @@ async def get_party_ledger_report(
     transactions = await db.transactions.find(txn_query, {"_id": 0}).sort("date", -1).to_list(1000)
     
     # Calculate totals
-    total_invoiced = sum(inv.get('grand_total', 0) for inv in invoices)
-    total_paid = sum(txn.get('amount', 0) for txn in transactions if txn.get('transaction_type') == 'debit')
-    total_outstanding = sum(inv.get('balance_due', 0) for inv in invoices)
+    total_invoiced = sum(safe_float(inv.get('grand_total', 0)) for inv in invoices)
+    total_paid = sum(safe_float(txn.get('amount', 0)) for txn in transactions if txn.get('transaction_type') == 'debit')
+    total_outstanding = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
     
     return {
         "party": party,
@@ -9379,15 +9390,21 @@ async def get_financial_summary(
     account_type_map = {acc.get('id'): acc.get('account_type', '').lower() for acc in accounts if 'id' in acc}
     account_name_map = {acc.get('id'): acc.get('name', '') for acc in accounts if 'id' in acc}
     
+    # Helper function to safely convert values to float (handles Decimal128)
+    def safe_float(value):
+        if isinstance(value, Decimal128):
+            return float(value.to_decimal())
+        return float(value) if value else 0.0
+    
     # Calculate balances from ACCOUNTS table (current state)
     cash_balance = sum(
-        acc.get('current_balance', 0) for acc in accounts 
+        safe_float(acc.get('current_balance', 0)) for acc in accounts 
         if acc.get('account_type', '').lower() == 'asset' and 
         'cash' in acc.get('name', '').lower()
     )
     
     bank_balance = sum(
-        acc.get('current_balance', 0) for acc in accounts 
+        safe_float(acc.get('current_balance', 0)) for acc in accounts 
         if acc.get('account_type', '').lower() == 'asset' and 
         'bank' in acc.get('name', '').lower()
     )
@@ -9396,14 +9413,14 @@ async def get_financial_summary(
     # Sum of all credits to Income-type accounts
     # Subtract sales returns (debits to income accounts)
     total_sales_credits = sum(
-        txn.get('amount', 0) for txn in transactions
+        safe_float(txn.get('amount', 0)) for txn in transactions
         if txn.get('transaction_type') == 'credit' and
         account_type_map.get(txn.get('account_id'), '') == 'income'
     )
     
     # Sales returns reduce total sales (debits or category="sales_return")
     total_sales_returns = sum(
-        txn.get('amount', 0) for txn in transactions
+        safe_float(txn.get('amount', 0)) for txn in transactions
         if (txn.get('category') == 'sales_return' or 
             (txn.get('transaction_type') == 'debit' and
              account_type_map.get(txn.get('account_id'), '') == 'income'))
@@ -9414,12 +9431,12 @@ async def get_financial_summary(
     
     # Calculate Total Income and Expenses for Net Profit
     total_income = sum(
-        acc.get('current_balance', 0) for acc in accounts
+        safe_float(acc.get('current_balance', 0)) for acc in accounts
         if acc.get('account_type', '').lower() == 'income'
     )
     
     total_expenses = sum(
-        acc.get('current_balance', 0) for acc in accounts
+        safe_float(acc.get('current_balance', 0)) for acc in accounts
         if acc.get('account_type', '').lower() == 'expense'
     )
     
@@ -9429,12 +9446,12 @@ async def get_financial_summary(
     
     # Calculate Total Credit and Debit from TRANSACTIONS
     total_credit = sum(
-        txn.get('amount', 0) for txn in transactions 
+        safe_float(txn.get('amount', 0)) for txn in transactions 
         if txn.get('transaction_type') == 'credit'
     )
     
     total_debit = sum(
-        txn.get('amount', 0) for txn in transactions 
+        safe_float(txn.get('amount', 0)) for txn in transactions 
         if txn.get('transaction_type') == 'debit'
     )
     
@@ -9446,10 +9463,10 @@ async def get_financial_summary(
     # ============================================================================
     
     # Outstanding is still calculated from invoices (customer/vendor balances)
-    total_outstanding = sum(inv.get('balance_due', 0) for inv in invoices)
+    total_outstanding = sum(safe_float(inv.get('balance_due', 0)) for inv in invoices)
     
     # Total account balance (sum of all account balances)
-    total_account_balance = sum(acc.get('current_balance', 0) for acc in accounts)
+    total_account_balance = sum(safe_float(acc.get('current_balance', 0)) for acc in accounts)
     
     # Daily closing difference (for reconciliation)
     daily_closing_difference = 0
@@ -9465,8 +9482,8 @@ async def get_financial_summary(
     
     closings = await db.daily_closings.find(closing_query, {"_id": 0}).to_list(100)
     for closing in closings:
-        expected = closing.get('expected_closing', 0)
-        actual = closing.get('actual_closing', 0)
+        expected = safe_float(closing.get('expected_closing', 0))
+        actual = safe_float(closing.get('actual_closing', 0))
         daily_closing_difference += (actual - expected)
     
     # Get returns metrics for the period
