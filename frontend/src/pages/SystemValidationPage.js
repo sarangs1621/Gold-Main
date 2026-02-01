@@ -59,6 +59,20 @@ export default function SystemValidationPage() {
     );
   }
   
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <AlertCircle className="w-12 h-12 text-red-500" />
+        <p className="text-red-600 font-medium">Error loading validation data</p>
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button onClick={loadValidationData}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  
   if (!validationData) {
     return (
       <div className="flex items-center justify-center h-64">
