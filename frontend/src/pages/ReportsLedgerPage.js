@@ -294,14 +294,6 @@ export default function ReportsLedgerPage() {
 
     return (
       <div className="space-y-4">
-        {/* Info Banner */}
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>MODULE 8: INVENTORY TRUTH</strong> - All data sourced from StockMovements ledger only. 
-            Every entry is traceable to its source transaction.
-          </AlertDescription>
-        </Alert>
 
         {/* Filters */}
         {showFilters && (
@@ -1065,7 +1057,6 @@ export default function ReportsLedgerPage() {
         <div>
           <h1 className="text-3xl font-bold">Ledger Reports</h1>
           <p className="text-muted-foreground mt-1">
-            MODULE 8: Truth-only reports from authoritative ledgers
           </p>
         </div>
         <Button
