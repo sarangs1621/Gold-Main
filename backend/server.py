@@ -10262,12 +10262,12 @@ async def export_inventory_pdf(
     category: Optional[str] = None,
     current_user: User = Depends(require_permission('reports.view'))
 ):
-    """Export inventory report as PDF"""
-    from reportlab.lib.pagesizes import A4
+    """Export inventory report as PDF with ALL movements (multi-page support)"""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from io import BytesIO
     from fastapi.responses import StreamingResponse
     
@@ -10282,41 +10282,40 @@ async def export_inventory_pdf(
     )
     
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     
-    # Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(inch, height - inch, "Inventory Report")
+    elements = []
+    styles = getSampleStyleSheet()
     
-    c.setFont("Helvetica", 10)
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph("Inventory Report", title_style))
+    
+    # Date info
     date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     if start_date or end_date:
         date_str += f" | Period: {start_date or 'Start'} to {end_date or 'End'}"
-    c.drawString(inch, height - inch - 0.3*inch, date_str)
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
     
-    # Summary
-    y_position = height - inch - 0.8*inch
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Summary")
-    y_position -= 0.3*inch
-    
-    c.setFont("Helvetica", 10)
+    # Summary section
     summary = data['summary']
-    c.drawString(inch, y_position, f"Total In: {summary['total_in']:.2f} pcs")
-    c.drawString(inch + 2.5*inch, y_position, f"Total Out: {summary['total_out']:.2f} pcs")
-    y_position -= 0.2*inch
-    c.drawString(inch, y_position, f"Weight In: {summary['total_weight_in']:.3f} g")
-    c.drawString(inch + 2.5*inch, y_position, f"Weight Out: {summary['total_weight_out']:.3f} g")
-    y_position -= 0.5*inch
+    summary_text = f"""<b>Summary:</b><br/>
+    Total In: {summary['total_in']:.2f} pcs | Total Out: {summary['total_out']:.2f} pcs | Weight In: {summary['total_weight_in']:.3f} g | Weight Out: {summary['total_weight_out']:.3f} g
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
     
-    # Table
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Stock Movements")
-    y_position -= 0.3*inch
-    
+    # Create table data - NO LIMIT, include ALL movements
     table_data = [['Date', 'Category', 'Type', 'Qty', 'Weight', 'Reference']]
-    for mov in data['movements'][:30]:
+    for mov in data['movements']:  # FIXED: Removed [:30] limit - now includes ALL movements
         mov_date = mov.get('date', '')
         if isinstance(mov_date, str):
             mov_date = mov_date[:10]
@@ -10325,28 +10324,32 @@ async def export_inventory_pdf(
         
         table_data.append([
             mov_date,
-            (mov.get('header_name') or '')[:15],
-            (mov.get('movement_type') or '')[:10],
+            (mov.get('header_name') or '')[:20],
+            (mov.get('movement_type') or '')[:12],
             f"{mov.get('qty_delta', 0):.1f}",
             f"{mov.get('weight_delta', 0):.2f}",
-            (mov.get('reference_type') or '')[:12]
+            (mov.get('reference_type') or '')[:15]
         ])
     
-    table = Table(table_data, colWidths=[0.9*inch, 1.3*inch, 1*inch, 0.7*inch, 0.9*inch, 1.2*inch])
+    # Create table with repeatRows for multi-page support
+    table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
     ]))
     
-    table.wrapOn(c, width, height)
-    table.drawOn(c, inch, y_position - len(table_data) * 0.25*inch)
+    elements.append(table)
     
-    c.save()
+    # Build PDF
+    doc.build(elements)
     buffer.seek(0)
     
     return StreamingResponse(
