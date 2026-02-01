@@ -9045,11 +9045,14 @@ async def view_inventory_report(
     
     movements = await db.stock_movements.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(10000)
     
-    # Calculate totals
-    total_in = sum(m.get('qty_delta', 0) for m in movements if m.get('qty_delta', 0) > 0)
-    total_out = sum(abs(m.get('qty_delta', 0)) for m in movements if m.get('qty_delta', 0) < 0)
-    total_weight_in = sum(m.get('weight_delta', 0) for m in movements if m.get('weight_delta', 0) > 0)
-    total_weight_out = sum(abs(m.get('weight_delta', 0)) for m in movements if m.get('weight_delta', 0) < 0)
+    # Calculate totals (using safe_float to handle Decimal128 from MongoDB)
+    total_in = sum(safe_float(m.get('qty_delta', 0)) for m in movements if safe_float(m.get('qty_delta', 0)) > 0)
+    total_out = sum(abs(safe_float(m.get('qty_delta', 0))) for m in movements if safe_float(m.get('qty_delta', 0)) < 0)
+    total_weight_in = sum(safe_float(m.get('weight_delta', 0)) for m in movements if safe_float(m.get('weight_delta', 0)) > 0)
+    total_weight_out = sum(abs(safe_float(m.get('weight_delta', 0))) for m in movements if safe_float(m.get('weight_delta', 0)) < 0)
+    
+    # Convert Decimal128 to float for JSON serialization
+    movements = [decimal_to_float(m) for m in movements]
     
     return {
         "movements": movements,
@@ -9317,13 +9320,13 @@ async def get_inventory_stock_report(
     
     movements = await db.stock_movements.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
     
-    # Calculate stock totals
-    total_in = sum(m.get('qty_delta', 0) for m in movements if m.get('qty_delta', 0) > 0)
-    total_out = sum(abs(m.get('qty_delta', 0)) for m in movements if m.get('qty_delta', 0) < 0)
+    # Calculate stock totals (using safe_float to handle Decimal128 from MongoDB)
+    total_in = sum(safe_float(m.get('qty_delta', 0)) for m in movements if safe_float(m.get('qty_delta', 0)) > 0)
+    total_out = sum(abs(safe_float(m.get('qty_delta', 0))) for m in movements if safe_float(m.get('qty_delta', 0)) < 0)
     current_stock = total_in - total_out
     
-    total_weight_in = sum(m.get('weight_delta', 0) for m in movements if m.get('weight_delta', 0) > 0)
-    total_weight_out = sum(abs(m.get('weight_delta', 0)) for m in movements if m.get('weight_delta', 0) < 0)
+    total_weight_in = sum(safe_float(m.get('weight_delta', 0)) for m in movements if safe_float(m.get('weight_delta', 0)) > 0)
+    total_weight_out = sum(abs(safe_float(m.get('weight_delta', 0))) for m in movements if safe_float(m.get('weight_delta', 0)) < 0)
     current_weight = total_weight_in - total_weight_out
     
     return {
@@ -10384,7 +10387,7 @@ async def get_sales_history_report(
         
         # Get weight from StockMovements (SOURCE-OF-TRUTH)
         invoice_movements = stock_by_invoice.get(invoice_id, [])
-        invoice_weight = sum(abs(m.get('weight_delta', 0)) for m in invoice_movements)
+        invoice_weight = sum(abs(safe_float(m.get('weight_delta', 0))) for m in invoice_movements)
         
         # Get sales amount from Transactions (SOURCE-OF-TRUTH)
         invoice_txns = txn_by_invoice.get(invoice_id, [])
@@ -10756,7 +10759,7 @@ async def get_purchase_history_report(
         
         # Get weight from StockMovements (SOURCE-OF-TRUTH)
         purchase_movements = stock_by_purchase.get(purchase_id, [])
-        purchase_weight = sum(abs(m.get('weight_delta', 0)) for m in purchase_movements)
+        purchase_weight = sum(abs(safe_float(m.get('weight_delta', 0))) for m in purchase_movements)
         
         # Get purchase amount from Transactions (SOURCE-OF-TRUTH)
         purchase_txns = txn_by_purchase.get(purchase_id, [])
