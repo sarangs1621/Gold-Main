@@ -732,14 +732,6 @@ export default function ReportsLedgerPage() {
 
     return (
       <div className="space-y-4">
-        {/* Info Banner */}
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>MODULE 8: FINANCE TRUTH</strong> - All data sourced from Transactions ledger only. 
-            Net Flow = Total Credit - Total Debit.
-          </AlertDescription>
-        </Alert>
 
         {/* Filters */}
         {showFilters && (
@@ -1022,14 +1014,6 @@ export default function ReportsLedgerPage() {
 
     return (
       <div className="space-y-4">
-        {/* Info Banner */}
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>MODULE 8: GOLD TRUTH</strong> - All data sourced from GoldLedger only. 
-            IN = Shop receives gold, OUT = Shop gives gold.
-          </AlertDescription>
-        </Alert>
 
         {/* Filters */}
         {showFilters && (
