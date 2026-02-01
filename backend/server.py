@@ -8115,7 +8115,7 @@ async def get_transactions(
 @api_router.post("/transactions", response_model=Transaction)
 async def create_transaction(transaction_data: dict, current_user: User = Depends(require_permission('finance.create'))):
     """
-    Create a manual finance transaction.
+    Create a manual finance transaction with balance tracking.
     
     WARNING: Manual transactions should be created in pairs for double-entry bookkeeping.
     Consider creating both debit and credit sides to maintain balance.
@@ -8123,6 +8123,8 @@ async def create_transaction(transaction_data: dict, current_user: User = Depend
     Balance update rules:
     - ASSET/EXPENSE accounts: Debit increases, Credit decreases
     - INCOME/LIABILITY/EQUITY accounts: Credit increases, Debit decreases
+    
+    Idempotency: Include 'idempotency_key' in request body to prevent duplicate submissions.
     """
     year = datetime.now(timezone.utc).year
     count = await db.transactions.count_documents({"transaction_number": {"$regex": f"^TXN-{year}"}})
@@ -8140,8 +8142,16 @@ async def create_transaction(transaction_data: dict, current_user: User = Depend
             detail="transaction_type must be either 'debit' or 'credit'"
         )
     
+    # Get account type for balance calculation
+    account_type = account.get('account_type', 'asset')
+    
+    # Extract idempotency_key if provided
+    idempotency_key = transaction_data.get('idempotency_key')
+    
     # Remove conflicting keys and add required fields
-    transaction_data_clean = {k: v for k, v in transaction_data.items() if k not in ['transaction_number', 'account_name', 'created_by']}
+    transaction_data_clean = {k: v for k, v in transaction_data.items() 
+                             if k not in ['transaction_number', 'account_name', 'created_by', 'balance_before', 'balance_after', 'has_balance']}
+    
     transaction = Transaction(
         **transaction_data_clean,
         transaction_number=transaction_number,
@@ -8149,33 +8159,30 @@ async def create_transaction(transaction_data: dict, current_user: User = Depend
         created_by=current_user.id
     )
     
-    await db.transactions.insert_one(transaction.model_dump())
-    
-    # Calculate balance delta using account-type-aware logic
-    account_type = account.get('account_type', 'asset')
-    amount = transaction.amount
-    delta = calculate_balance_delta(account_type, transaction_type, amount)
-    
-    await db.accounts.update_one(
-        {"id": transaction.account_id},
-        {"$inc": {"current_balance": delta}}
+    # Use the new helper function to create transaction with balance tracking
+    created_transaction = await create_transaction_with_balance(
+        transaction,
+        account_type,
+        idempotency_key
     )
     
+    # Create audit log
     await create_audit_log(
         current_user.id,
         current_user.full_name,
         "transaction",
-        transaction.id,
+        created_transaction.id,
         "create",
         {
             "account_type": account_type,
             "transaction_type": transaction_type,
-            "amount": amount,
-            "balance_delta": delta
+            "amount": created_transaction.amount,
+            "balance_before": created_transaction.balance_before,
+            "balance_after": created_transaction.balance_after
         }
     )
     
-    return transaction
+    return created_transaction
 
 
 @api_router.get("/transactions/summary")
