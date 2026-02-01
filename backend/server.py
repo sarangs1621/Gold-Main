@@ -9861,31 +9861,16 @@ async def export_outstanding_pdf(
     end_date: Optional[str] = None,
     current_user: User = Depends(require_permission('reports.view'))
 ):
-    """Export outstanding report as PDF"""
-    from reportlab.lib.pagesizes import A4
+    """Export outstanding report as PDF with ALL parties (multi-page support)"""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from io import BytesIO
     from fastapi.responses import StreamingResponse
     
     # Get data from outstanding report
-    params = {}
-    if party_id:
-        params['party_id'] = party_id
-    if party_type:
-        params['party_type'] = party_type
-    if start_date:
-        params['start_date'] = start_date
-    if end_date:
-        params['end_date'] = end_date
-    
-    # Call outstanding report endpoint logic
-    from urllib.parse import urlencode
-    import httpx
-    
-    # Get outstanding data by calling the endpoint function directly
     data = await get_outstanding_report(
         party_id=party_id,
         party_type=party_type,
@@ -9896,54 +9881,44 @@ async def export_outstanding_pdf(
     )
     
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     
-    # Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(inch, height - inch, "Outstanding Report")
+    elements = []
+    styles = getSampleStyleSheet()
     
-    # Date range
-    c.setFont("Helvetica", 10)
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f2937'),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph("Outstanding Report", title_style))
+    
+    # Date info
     date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     if start_date or end_date:
         date_str += f" | Period: {start_date or 'Start'} to {end_date or 'End'}"
-    c.drawString(inch, height - inch - 0.3*inch, date_str)
+    elements.append(Paragraph(date_str, styles['Normal']))
+    elements.append(Spacer(1, 0.2 * inch))
     
     # Summary section
-    y_position = height - inch - 0.8*inch
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Summary")
-    y_position -= 0.3*inch
-    
-    c.setFont("Helvetica", 10)
     summary = data['summary']
-    c.drawString(inch, y_position, f"Customer Due: {summary['customer_due']:.3f}")
-    c.drawString(inch + 2.5*inch, y_position, f"Vendor Payable: {summary['vendor_payable']:.3f}")
-    y_position -= 0.2*inch
-    c.drawString(inch, y_position, f"Total Outstanding: {summary['total_outstanding']:.3f}")
-    y_position -= 0.3*inch
+    summary_text = f"""<b>Summary:</b><br/>
+    Customer Due: {summary['customer_due']:.3f} | Vendor Payable: {summary['vendor_payable']:.3f} | Total Outstanding: {summary['total_outstanding']:.3f}<br/>
+    <b>Overdue Buckets:</b> 0-7 days: {summary['total_overdue_0_7']:.3f} | 8-30 days: {summary['total_overdue_8_30']:.3f} | 31+ days: {summary['total_overdue_31_plus']:.3f}
+    """
+    elements.append(Paragraph(summary_text, styles['Normal']))
+    elements.append(Spacer(1, 0.3 * inch))
     
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(inch, y_position, "Overdue Buckets:")
-    y_position -= 0.2*inch
-    c.setFont("Helvetica", 10)
-    c.drawString(inch, y_position, f"0-7 days: {summary['total_overdue_0_7']:.3f}")
-    c.drawString(inch + 2*inch, y_position, f"8-30 days: {summary['total_overdue_8_30']:.3f}")
-    c.drawString(inch + 4*inch, y_position, f"31+ days: {summary['total_overdue_31_plus']:.3f}")
-    y_position -= 0.5*inch
-    
-    # Parties table
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(inch, y_position, "Party-wise Outstanding")
-    y_position -= 0.3*inch
-    
-    # Create table data
+    # Create table data - NO LIMIT, include ALL parties
     table_data = [['Party Name', 'Type', 'Invoiced', 'Paid', 'Outstanding', '0-7d', '8-30d', '31+d']]
-    for party in data['parties'][:20]:  # Limit to 20 parties per page
+    for party in data['parties']:  # FIXED: Removed [:20] limit - now includes ALL parties
         party_name = party.get('party_name') or 'N/A'
         table_data.append([
-            party_name[:25],
+            party_name[:30],
             party.get('party_type', 'N/A'),
             f"{party.get('total_invoiced', 0):.2f}",
             f"{party.get('total_paid', 0):.2f}",
@@ -9953,25 +9928,26 @@ async def export_outstanding_pdf(
             f"{party.get('overdue_31_plus', 0):.2f}"
         ])
     
-    # Create table
-    table = Table(table_data, colWidths=[2*inch, 0.7*inch, 0.8*inch, 0.8*inch, 0.9*inch, 0.6*inch, 0.7*inch, 0.7*inch])
+    # Create table with repeatRows for multi-page support
+    table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
     ]))
     
-    # Draw table
-    table.wrapOn(c, width, height)
-    table.drawOn(c, inch, y_position - len(table_data) * 0.25*inch)
+    elements.append(table)
     
-    c.save()
+    # Build PDF
+    doc.build(elements)
     buffer.seek(0)
     
     return StreamingResponse(
