@@ -8102,9 +8102,16 @@ async def get_transactions(
                 "jobcard": "Job Card",
             }.get(ref, "Manual Entry")
 
-            # 5. Safe Balance Defaults (Avoid the heavy loop)
-            txn["balance_before"] = 0.0
-            txn["balance_after"] = 0.0
+            # 5. Balance fields - return actual values from DB
+            # For legacy transactions without balance tracking, these will be None
+            # Frontend will show "N/A" for None/null values
+            if txn.get("has_balance"):
+                txn["balance_before"] = safe_float(txn.get("balance_before"))
+                txn["balance_after"] = safe_float(txn.get("balance_after"))
+            else:
+                # Legacy transactions without balance tracking
+                txn["balance_before"] = None
+                txn["balance_after"] = None
 
         return create_pagination_response(transactions, total_count, page, page_size)
 
