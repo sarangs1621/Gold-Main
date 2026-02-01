@@ -24,9 +24,13 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 def datetime_converter(obj):
-    """Convert datetime objects to ISO format for JSON serialization"""
+    """Convert datetime and Decimal128 objects for JSON serialization"""
+    from bson import Decimal128
+    
     if isinstance(obj, datetime):
         return obj.isoformat()
+    if isinstance(obj, Decimal128):
+        return float(str(obj))
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 async def backup_accounting_data():
