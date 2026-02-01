@@ -1865,7 +1865,7 @@ async def login(request: Request, credentials: UserLogin, response: Response):
             action="login_failed",
             success=False,
             failure_reason="User not found"
-        )
+        )   
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Check account lockout
@@ -3711,22 +3711,62 @@ async def create_party(request: Request, party_data: dict, current_user: User = 
     return party
 
 @api_router.get("/parties/outstanding-summary")
-async def get_outstanding_summary(current_user: User = Depends(require_permission('parties.view'))):
-    invoices = await db.invoices.find({"is_deleted": False, "payment_status": {"$ne": "paid"}}, {"_id": 0}).to_list(10000)
-    
-    total_customer_due = sum(inv.get('balance_due', 0) for inv in invoices)
-    
-    party_outstanding = {}
-    for inv in invoices:
-        cid = inv.get('customer_id')
-        if cid:
+async def get_outstanding_summary(
+    current_user: User = Depends(require_permission('parties.view'))
+):
+    try:
+        invoices = await db.invoices.find(
+            {
+                "is_deleted": False,
+                "payment_status": {"$ne": "paid"}
+            },
+            {"_id": 0}
+        ).to_list(10000)
+
+        total_customer_due = 0.0
+        party_outstanding = {}
+
+        for inv in invoices:
+            # SAFELY normalize balance_due
+            raw_amount = inv.get('balance_due')
+            try:
+                amount = float(raw_amount) if raw_amount is not None else 0.0
+            except Exception:
+                amount = 0.0
+
+            total_customer_due += amount
+
+            cid = inv.get('customer_id')
+            if not cid:
+                continue
+
             if cid not in party_outstanding:
-                party_outstanding[cid] = {"customer_id": cid, "customer_name": inv.get('customer_name', ''), "outstanding": 0}
-            party_outstanding[cid]['outstanding'] += inv.get('balance_due', 0)
-    
-    top_10 = sorted(party_outstanding.values(), key=lambda x: x['outstanding'], reverse=True)[:10]
-    
-    return {"total_customer_due": total_customer_due, "top_10_outstanding": top_10}
+                party_outstanding[cid] = {
+                    "customer_id": cid,
+                    "customer_name": inv.get('customer_name', ''),
+                    "outstanding": 0.0
+                }
+
+            party_outstanding[cid]['outstanding'] += amount
+
+        top_10 = sorted(
+            party_outstanding.values(),
+            key=lambda x: x['outstanding'],
+            reverse=True
+        )[:10]
+
+        return {
+            "total_customer_due": round(total_customer_due, 2),
+            "top_10_outstanding": top_10
+        }
+
+    except Exception as e:
+        # CRITICAL: log real error
+        import traceback
+        print("❌ Outstanding summary crashed")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @api_router.get("/parties/{party_id}", response_model=Party)
 async def get_party(party_id: str, current_user: User = Depends(require_permission('parties.view'))):
@@ -6124,29 +6164,54 @@ async def deactivate_worktype(
     return {"message": "Work type deactivated successfully"}
 
 @api_router.get("/invoices")
-@limiter.limit("1000/hour")  # General authenticated rate limit: 1000 requests per hour
+@limiter.limit("1000/hour")
 async def get_invoices(
     request: Request,
     page: int = 1,
     page_size: int = 10,
     current_user: User = Depends(require_permission('invoices.view'))
 ):
-    """Get invoices with pagination support"""
-    if not user_has_permission(current_user, 'invoices.view'):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to view invoices")
-    
-    query = {"is_deleted": False}
-    
-    # Calculate skip value
-    skip = (page - 1) * page_size
-    
-    # Get total count for pagination
-    total_count = await db.invoices.count_documents(query)
-    
-    # Get paginated results
-    invoices = await db.invoices.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size).to_list(page_size)
-    
-    return create_pagination_response(invoices, total_count, page, page_size)
+    try:
+        query = {"is_deleted": False}
+        skip = (page - 1) * page_size
+
+        invoices = await db.invoices.find(
+            query, {"_id": 0}
+        ).skip(skip).limit(page_size).to_list(page_size)
+
+        # Normalize fields
+        for inv in invoices:
+            # Dates
+            d = inv.get("date")
+            if hasattr(d, "isoformat"):
+                inv["_sort_date"] = d
+                inv["date"] = d.isoformat()
+            else:
+                inv["_sort_date"] = datetime.min
+                inv["date"] = None
+
+            # Numbers
+            for k in ("grand_total", "paid_amount", "balance_due"):
+                try:
+                    inv[k] = float(inv.get(k) or 0)
+                except Exception:
+                    inv[k] = 0.0
+
+        invoices.sort(key=lambda x: x["_sort_date"], reverse=True)
+
+        for inv in invoices:
+            inv.pop("_sort_date", None)
+
+        total_count = await db.invoices.count_documents(query)
+
+        return create_pagination_response(invoices, total_count, page, page_size)
+
+    except Exception as e:
+        import traceback
+        print("❌ Invoice API crashed")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @api_router.get("/invoices/returnable")
 async def get_returnable_invoices(
@@ -7853,133 +7918,85 @@ async def delete_account(request: Request, account_id: str, current_user: User =
     return {"message": "Account deleted successfully"}
 
 @api_router.get("/transactions")
+@limiter.limit("100/minute")
 async def get_transactions(
+    request: Request,
     page: int = 1,
     page_size: int = 10,
     account_id: Optional[str] = None,
-    account_type: Optional[str] = None,  # "cash" or "bank"
-    transaction_type: Optional[str] = None,  # "credit" or "debit"
-    reference_type: Optional[str] = None,  # "invoice", "purchase", "manual"
+    transaction_type: Optional[str] = None, 
+    reference_type: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     current_user: User = Depends(require_permission('finance.view'))
 ):
-    """
-    Get transactions with pagination and filtering support.
-    Includes running balance calculation for each transaction.
-    """
-    query = {"is_deleted": False}
-    
-    # Apply filters
-    if account_id:
-        query["account_id"] = account_id
-    
-    if transaction_type:
-        query["transaction_type"] = transaction_type
-    
-    if reference_type:
-        if reference_type == "manual":
-            query["reference_type"] = None
-        else:
-            query["reference_type"] = reference_type
-    
-    # Date range filter
-    if start_date or end_date:
-        date_query = {}
-        if start_date:
-            date_query["$gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        if end_date:
-            date_query["$lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-        if date_query:
-            query["date"] = date_query
-    
-    # Account type filter (cash vs bank)
-    if account_type:
-        accounts = await db.accounts.find({"account_type": account_type, "is_deleted": False}, {"_id": 0}).to_list(1000)
-        account_ids = [acc['id'] for acc in accounts]
-        if account_ids:
-            query["account_id"] = {"$in": account_ids}
-        else:
-            # No accounts of this type exist, return empty
-            return create_pagination_response([], 0, page, page_size)
-    
-    # Calculate skip value
-    skip = (page - 1) * page_size
-    
-    # Get total count for pagination
-    total_count = await db.transactions.count_documents(query)
-    
-    # Get paginated results sorted by date (newest first)
-    transactions = await db.transactions.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size).to_list(page_size)
-    
-    # Enhance each transaction with account type and running balance
-    account_cache = {}
-    for txn in transactions:
-        # Get account details
-        if txn['account_id'] not in account_cache:
-            account = await db.accounts.find_one({"id": txn['account_id']}, {"_id": 0})
-            if account:
-                account_cache[txn['account_id']] = account
-        
-        if txn['account_id'] in account_cache:
-            account = account_cache[txn['account_id']]
-            txn['account_type'] = account['account_type']
-            txn['account_current_balance'] = account['current_balance']
-        else:
-            txn['account_type'] = 'unknown'
-            txn['account_current_balance'] = 0.0
-        
-        # Set transaction source
-        if txn.get('reference_type') == 'invoice':
-            txn['transaction_source'] = 'Invoice Payment'
-        elif txn.get('reference_type') == 'purchase':
-            txn['transaction_source'] = 'Purchase Payment'
-        elif txn.get('reference_type') == 'jobcard':
-            txn['transaction_source'] = 'Job Card'
-        else:
-            txn['transaction_source'] = 'Manual Entry'
-    
-    # Calculate running balance for display
-    # For simplicity, we'll calculate the balance at the time of transaction
-    # by getting all transactions for that account up to that date
-    for txn in transactions:
-        # Get all transactions for this account up to and including this transaction date
-        prior_txns = await db.transactions.find({
-            "account_id": txn['account_id'],
-            "is_deleted": False,
-            "date": {"$lte": txn['date']}
-        }, {"_id": 0}).sort("date", 1).to_list(10000)
-        
-        # Get the account's opening balance
-        account = account_cache.get(txn['account_id'])
-        if account:
-            running_balance = account['opening_balance']
-        else:
-            running_balance = 0.0
-        
-        # Calculate running balance up to current transaction
-        balance_before = running_balance
-        for pt in prior_txns:
-            if pt['transaction_type'] == 'credit':
-                running_balance += pt['amount']
-            else:
-                running_balance -= pt['amount']
+    try:
+        query = {"is_deleted": False}
+
+        if account_id:
+            query["account_id"] = account_id
+        if transaction_type:
+            query["transaction_type"] = transaction_type
+        if reference_type:
+            query["reference_type"] = None if reference_type == "manual" else reference_type
+
+        # Date filtering
+        if start_date or end_date:
+            date_query = {}
+            try:
+                if start_date:
+                    date_query["$gte"] = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                if end_date:
+                    date_query["$lte"] = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                query["date"] = date_query
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid date format")
+
+        # Pagination & Count
+        skip = (page - 1) * page_size
+        total_count = await db.transactions.count_documents(query)
+
+        # Fetch data with sorting at DB level (much faster)
+        cursor = db.transactions.find(query, {"_id": 0}).sort("date", -1).skip(skip).limit(page_size)
+        transactions = await cursor.to_list(page_size)
+
+        # Cache accounts to avoid redundant DB hits
+        account_ids = list(set(t.get("account_id") for t in transactions if t.get("account_id")))
+        accounts_data = await db.accounts.find({"id": {"$in": account_ids}}, {"_id": 0}).to_list(len(account_ids))
+        account_map = {a["id"]: a for a in accounts_data}
+
+        # Format transactions for Frontend
+        for txn in transactions:
+            # 1. Format Date
+            if isinstance(txn.get("date"), datetime):
+                txn["date"] = txn["date"].isoformat()
             
-            # If this is the current transaction, capture before and after
-            if pt['id'] == txn['id']:
-                if txn['transaction_type'] == 'credit':
-                    balance_before = running_balance - txn['amount']
-                else:
-                    balance_before = running_balance + txn['amount']
-                break
-        
-        txn['balance_before'] = round(balance_before, 3)
-        txn['balance_after'] = round(running_balance, 3)
-    
-    # Convert Decimal128 to float for JSON serialization
-    transactions = decimal_to_float(transactions)
-    
-    return create_pagination_response(transactions, total_count, page, page_size)
+            # 2. Format Amount
+            txn["amount"] = float(str(txn.get("amount", 0)))
+
+            # 3. Attach Account Details
+            acc = account_map.get(txn.get("account_id"))
+            if acc:
+                txn["account_name"] = acc.get("name")
+                txn["account_type"] = acc.get("account_type")
+            
+            # 4. Reference Labels
+            ref = txn.get("reference_type")
+            txn["transaction_source"] = {
+                "invoice": "Invoice Payment",
+                "purchase": "Purchase Payment",
+                "jobcard": "Job Card",
+            }.get(ref, "Manual Entry")
+
+            # 5. Safe Balance Defaults (Avoid the heavy loop)
+            txn["balance_before"] = 0.0
+            txn["balance_after"] = 0.0
+
+        return create_pagination_response(transactions, total_count, page, page_size)
+
+    except Exception as e:
+        logging.error(f"Finance API Crash: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @api_router.post("/transactions", response_model=Transaction)
 async def create_transaction(transaction_data: dict, current_user: User = Depends(require_permission('finance.create'))):

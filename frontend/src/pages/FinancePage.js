@@ -67,61 +67,61 @@ export default function FinancePageEnhanced() {
     notes: ''
   });
 
-  const loadData = useCallback(async () => {
-    try {
-      // Build query params for filters
-      const params = { page: currentPage, page_size: 10 };
-      if (filters.account_id && filters.account_id !== 'all') params.account_id = filters.account_id;
-      if (filters.account_type && filters.account_type !== 'all') params.account_type = filters.account_type;
-      if (filters.transaction_type && filters.transaction_type !== 'all') params.transaction_type = filters.transaction_type;
-      if (filters.reference_type && filters.reference_type !== 'all') params.reference_type = filters.reference_type;
-      if (filters.start_date) params.start_date = filters.start_date;
-      if (filters.end_date) params.end_date = filters.end_date;
-      
-      const [accountsRes, transactionsRes, summaryRes] = await Promise.all([
-        API.get(`/api/accounts`),
-        API.get(`/api/transactions`, { params }),
-        API.get(`/api/transactions/summary`, { params })
-      ]);
-      
-      setAccounts(Array.isArray(accountsRes.data) ? accountsRes.data : []);
-      setTransactions(transactionsRes.data.items || []);
-      setPagination(transactionsRes.data.pagination);
-      setSummary(summaryRes.data || {
-        total_credit: 0,
-        total_debit: 0,
-        net_flow: 0,
-        total_in: 0,
-        total_out: 0,
-        transaction_count: 0,
-        cash_summary: { credit: 0, debit: 0, net: 0 },
-        bank_summary: { credit: 0, debit: 0, net: 0 },
-        account_breakdown: []
-      });
-    } catch (error) {
-      console.error('Failed to load data:', error);
-      // Only show toast for actual server errors (not 404 or authentication errors)
-      // 404 is expected when there's no data yet
-      const status = error.response?.status;
-      if (status && status !== 401 && status !== 403 && status !== 404 && status >= 500) {
-        toast.error('Failed to load financial data');
-      }
-      // Set safe defaults
-      setAccounts([]);
-      setTransactions([]);
+const loadData = useCallback(async () => {
+  try {
+    // Build query params for filters
+    const params = { page: currentPage, page_size: 10 };
+    if (filters.account_id && filters.account_id !== 'all') params.account_id = filters.account_id;
+    if (filters.account_type && filters.account_type !== 'all') params.account_type = filters.account_type;
+    if (filters.transaction_type && filters.transaction_type !== 'all') params.transaction_type = filters.transaction_type;
+    if (filters.reference_type && filters.reference_type !== 'all') params.reference_type = filters.reference_type;
+    if (filters.start_date) params.start_date = filters.start_date;
+    if (filters.end_date) params.end_date = filters.end_date;
+
+    // Use Promise.allSettled to handle requests independently
+    const results = await Promise.allSettled([
+      API.get(`/api/accounts`),
+      API.get(`/api/transactions`, { params }),
+      API.get(`/api/transactions/summary`, { params })
+    ]);
+
+    const [accountsResult, transactionsResult, summaryResult] = results;
+
+    // Handle Accounts
+    if (accountsResult.status === 'fulfilled') {
+      setAccounts(Array.isArray(accountsResult.value.data) ? accountsResult.value.data : []);
+    } else {
+      console.error('Accounts failed:', accountsResult.reason);
+      // Optional: don't wipe existing accounts if this is a refresh
+    }
+
+    // Handle Transactions
+    if (transactionsResult.status === 'fulfilled') {
+      setTransactions(transactionsResult.value.data.items || []);
+      setPagination(transactionsResult.value.data.pagination);
+    } else {
+      console.error('Transactions failed:', transactionsResult.reason);
+      setTransactions([]); // Safe fall back
+      toast.error('Failed to load transaction list');
+    }
+
+    // Handle Summary
+    if (summaryResult.status === 'fulfilled') {
+      setSummary(summaryResult.value.data);
+    } else {
+      // Set default summary if failed
       setSummary({
-        total_credit: 0,
-        total_debit: 0,
-        net_flow: 0,
-        total_in: 0,
-        total_out: 0,
-        transaction_count: 0,
-        cash_summary: { credit: 0, debit: 0, net: 0 },
-        bank_summary: { credit: 0, debit: 0, net: 0 },
-        account_breakdown: []
+        total_credit: 0, total_debit: 0, net_flow: 0, total_in: 0, total_out: 0,
+        transaction_count: 0, cash_summary: { credit: 0, debit: 0, net: 0 },
+        bank_summary: { credit: 0, debit: 0, net: 0 }, account_breakdown: []
       });
     }
-  }, [filters, currentPage, setPagination]);
+
+  } catch (error) {
+    console.error('Unexpected error in loadData:', error);
+    toast.error('An unexpected error occurred');
+  }
+}, [filters, currentPage, setPagination]);
 
   useEffect(() => {
     loadData();
