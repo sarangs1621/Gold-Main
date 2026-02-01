@@ -1,0 +1,55 @@
+2026-02-01 05:20:54,545 - WARNING - ================================================================================
+2026-02-01 05:20:54,545 - WARNING - ⚠ EXECUTION MODE - Database will be modified
+2026-02-01 05:20:54,545 - WARNING - ================================================================================
+2026-02-01 05:20:54,545 - WARNING - This will update transaction balance fields in the database.
+2026-02-01 05:20:54,545 - WARNING - A backup will be created automatically before migration.
+2026-02-01 05:20:54,545 - WARNING - All account types will be processed.
+
+Type 'YES' to continue: 2026-02-01 05:20:54,545 - INFO - ================================================================================
+2026-02-01 05:20:54,545 - INFO - STEP 1: CREATING BACKUP
+2026-02-01 05:20:54,545 - INFO - ================================================================================
+================================================================================
+ACCOUNTING DATA BACKUP - STARTING
+================================================================================
+
+Backup location: /app/backup/accounting_backup_20260201_052054.json
+
+[1/5] Backing up accounts...
+  ✓ Backed up 20 accounts
+[2/5] Backing up transactions...
+  ✓ Backed up 142 transactions
+[3/5] Backing up invoices...
+  ✓ Backed up 63 invoices
+[4/5] Backing up daily closings...
+  ✓ Backed up 2 daily closings
+[5/5] Backing up gold ledger...
+  ✓ Backed up 1086 gold ledger entries
+2026-02-01 05:20:58,632 - ERROR - ✗ Backup failed: '>' not supported between instances of 'Decimal128' and 'int'
+2026-02-01 05:20:58,632 - ERROR - Migration failed: '>' not supported between instances of 'Decimal128' and 'int'
+2026-02-01 05:20:58,633 - ERROR - Restore from backup if needed
+Traceback (most recent call last):
+  File "/app/backend/migrate_transaction_balances.py", line 443, in <module>
+    asyncio.run(main())
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/app/backend/migrate_transaction_balances.py", line 439, in main
+    await migrator.run()
+  File "/app/backend/migrate_transaction_balances.py", line 354, in run
+    await self.create_backup()
+  File "/app/backend/migrate_transaction_balances.py", line 122, in create_backup
+    backup_file = await backup_accounting_data()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/backend/backup_accounting_data.py", line 93, in backup_accounting_data
+    "invoices_with_payments": len([i for i in invoices if i.get('paid_amount', 0) > 0]),
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/backend/backup_accounting_data.py", line 93, in <listcomp>
+    "invoices_with_payments": len([i for i in invoices if i.get('paid_amount', 0) > 0]),
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '>' not supported between instances of 'Decimal128' and 'int'
