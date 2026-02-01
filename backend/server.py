@@ -8557,9 +8557,9 @@ async def export_inventory(
         ws.cell(row=row_idx, column=2, value=movement.get('movement_type', ''))
         ws.cell(row=row_idx, column=3, value=movement.get('header_name', ''))
         ws.cell(row=row_idx, column=4, value=movement.get('description', ''))
-        ws.cell(row=row_idx, column=5, value=movement.get('qty_delta', 0))
-        ws.cell(row=row_idx, column=6, value=movement.get('weight_delta', 0))
-        ws.cell(row=row_idx, column=7, value=movement.get('purity', 0))
+        ws.cell(row=row_idx, column=5, value=safe_float(movement.get('qty_delta', 0)))
+        ws.cell(row=row_idx, column=6, value=safe_float(movement.get('weight_delta', 0)))
+        ws.cell(row=row_idx, column=7, value=safe_float(movement.get('purity', 0)))
         ws.cell(row=row_idx, column=8, value=movement.get('notes', ''))
     
     # Adjust column widths
@@ -8698,9 +8698,9 @@ async def export_invoices(
         ws1.cell(row=row_idx, column=6, value=inv.get('status', 'draft'))
         
         # Numeric columns (proper numbers, not strings)
-        ws1.cell(row=row_idx, column=7, value=float(inv.get('grand_total', 0)))
-        ws1.cell(row=row_idx, column=8, value=float(inv.get('paid_amount', 0)))
-        ws1.cell(row=row_idx, column=9, value=float(inv.get('balance_due', 0)))
+        ws1.cell(row=row_idx, column=7, value=safe_float(inv.get('grand_total', 0)))
+        ws1.cell(row=row_idx, column=8, value=safe_float(inv.get('paid_amount', 0)))
+        ws1.cell(row=row_idx, column=9, value=safe_float(inv.get('balance_due', 0)))
         ws1.cell(row=row_idx, column=10, value=inv.get('payment_status', ''))
     
     # Set column widths
@@ -8749,13 +8749,13 @@ async def export_invoices(
             # Numeric values
             ws2.cell(row=current_row, column=6, value=int(item.get('qty', 1)))
             ws2.cell(row=current_row, column=7, value=int(item.get('purity', 916)))
-            ws2.cell(row=current_row, column=8, value=float(item.get('weight', 0)))
-            ws2.cell(row=current_row, column=9, value=float(item.get('metal_rate', 0)))
-            ws2.cell(row=current_row, column=10, value=float(item.get('gold_value', 0)))
-            ws2.cell(row=current_row, column=11, value=float(item.get('making_value', 0)))
-            ws2.cell(row=current_row, column=12, value=float(item.get('vat_percent', 5)))
-            ws2.cell(row=current_row, column=13, value=float(item.get('vat_amount', 0)))
-            ws2.cell(row=current_row, column=14, value=float(item.get('line_total', 0)))
+            ws2.cell(row=current_row, column=8, value=safe_float(item.get('weight', 0)))
+            ws2.cell(row=current_row, column=9, value=safe_float(item.get('metal_rate', 0)))
+            ws2.cell(row=current_row, column=10, value=safe_float(item.get('gold_value', 0)))
+            ws2.cell(row=current_row, column=11, value=safe_float(item.get('making_value', 0)))
+            ws2.cell(row=current_row, column=12, value=safe_float(item.get('vat_percent', 5)))
+            ws2.cell(row=current_row, column=13, value=safe_float(item.get('vat_amount', 0)))
+            ws2.cell(row=current_row, column=14, value=safe_float(item.get('line_total', 0)))
             
             current_row += 1
     
@@ -8881,7 +8881,7 @@ async def export_transactions(
         ws.cell(row=row_idx, column=4, value=txn.get('mode', ''))
         ws.cell(row=row_idx, column=5, value=txn.get('party_name', ''))
         ws.cell(row=row_idx, column=6, value=txn.get('account_name', ''))
-        ws.cell(row=row_idx, column=7, value=txn.get('amount', 0))
+        ws.cell(row=row_idx, column=7, value=safe_float(txn.get('amount', 0)))        
         ws.cell(row=row_idx, column=8, value=txn.get('category', ''))
         ws.cell(row=row_idx, column=9, value=txn.get('notes', ''))
     
@@ -8889,11 +8889,11 @@ async def export_transactions(
     last_row = len(data['transactions']) + 3
     ws.cell(row=last_row, column=1, value="Summary:").font = Font(bold=True)
     ws.cell(row=last_row + 1, column=1, value="Total Credit:")
-    ws.cell(row=last_row + 1, column=2, value=data['summary']['total_credit'])
+    ws.cell(row=last_row + 1, column=2, value=safe_float(data['summary']['total_credit']))    
     ws.cell(row=last_row + 2, column=1, value="Total Debit:")
-    ws.cell(row=last_row + 2, column=2, value=data['summary']['total_debit'])
+    ws.cell(row=last_row + 2, column=2, value=safe_float(data['summary']['total_debit']))
     ws.cell(row=last_row + 3, column=1, value="Net Balance:")
-    ws.cell(row=last_row + 3, column=2, value=data['summary']['net_balance'])
+    ws.cell(row=last_row + 3, column=2, value=safe_float(data['summary']['net_balance']))
     
     # Adjust column widths
     for col in range(1, 10):
@@ -8970,12 +8970,12 @@ async def export_outstanding(
         
         ws.cell(row=row_idx, column=1, value=party.get('party_name', ''))
         ws.cell(row=row_idx, column=2, value=party.get('party_type', ''))
-        ws.cell(row=row_idx, column=3, value=party.get('total_invoiced', 0))
-        ws.cell(row=row_idx, column=4, value=party.get('total_paid', 0))
-        ws.cell(row=row_idx, column=5, value=party.get('total_outstanding', 0))
-        ws.cell(row=row_idx, column=6, value=party.get('overdue_0_7', 0))
-        ws.cell(row=row_idx, column=7, value=party.get('overdue_8_30', 0))
-        ws.cell(row=row_idx, column=8, value=party.get('overdue_31_plus', 0))
+        ws.cell(row=row_idx, column=3, value=safe_float(party.get('total_invoiced', 0)))
+        ws.cell(row=row_idx, column=4, value=safe_float(party.get('total_paid', 0)))
+        ws.cell(row=row_idx, column=5, value=safe_float(party.get('total_outstanding', 0)))
+        ws.cell(row=row_idx, column=6, value=safe_float(party.get('overdue_0_7', 0)))
+        ws.cell(row=row_idx, column=7, value=safe_float(party.get('overdue_8_30', 0)))
+        ws.cell(row=row_idx, column=8, value=safe_float(party.get('overdue_31_plus', 0)))        
         ws.cell(row=row_idx, column=9, value=last_invoice)
         ws.cell(row=row_idx, column=10, value=last_payment)
     
@@ -8983,17 +8983,17 @@ async def export_outstanding(
     last_row = len(data['parties']) + 3
     ws.cell(row=last_row, column=1, value="Summary:").font = Font(bold=True)
     ws.cell(row=last_row + 1, column=1, value="Customer Due (Receivable):")
-    ws.cell(row=last_row + 1, column=2, value=data['summary']['customer_due'])
+    ws.cell(row=last_row + 1, column=2, value=safe_float(data['summary']['customer_due']))
     ws.cell(row=last_row + 2, column=1, value="Vendor Payable:")
-    ws.cell(row=last_row + 2, column=2, value=data['summary']['vendor_payable'])
+    ws.cell(row=last_row + 2, column=2, value=safe_float(data['summary']['vendor_payable']))
     ws.cell(row=last_row + 3, column=1, value="Total Outstanding:")
-    ws.cell(row=last_row + 3, column=2, value=data['summary']['total_outstanding'])
+    ws.cell(row=last_row + 3, column=2, value=safe_float(data['summary']['total_outstanding']))
     ws.cell(row=last_row + 4, column=1, value="Overdue 0-7 Days:")
-    ws.cell(row=last_row + 4, column=2, value=data['summary']['total_overdue_0_7'])
+    ws.cell(row=last_row + 4, column=2, value=safe_float(data['summary']['total_overdue_0_7']))
     ws.cell(row=last_row + 5, column=1, value="Overdue 8-30 Days:")
-    ws.cell(row=last_row + 5, column=2, value=data['summary']['total_overdue_8_30'])
+    ws.cell(row=last_row + 5, column=2, value=safe_float(data['summary']['total_overdue_8_30']))
     ws.cell(row=last_row + 6, column=1, value="Overdue 31+ Days:")
-    ws.cell(row=last_row + 6, column=2, value=data['summary']['total_overdue_31_plus'])
+    ws.cell(row=last_row + 6, column=2, value=safe_float(data['summary']['total_overdue_31_plus']))
     
     # Adjust column widths
     for col in range(1, 11):
@@ -10137,11 +10137,11 @@ async def export_transactions_pdf(
             txn_date = txn_date.strftime('%Y-%m-%d')
         
         table_data.append([
-            txn.get('transaction_number', '')[:15],
+            (txn.get('transaction_number') or '')[:15],
             txn_date,
-            txn.get('transaction_type', '')[:6],
-            txn.get('account_name', '')[:20],
-            txn.get('party_name', 'N/A')[:15],
+            (txn.get('transaction_type') or '')[:6],
+            (txn.get('account_name') or '')[:20],
+            (txn.get('party_name') or 'N/A')[:15],
             f"{txn.get('amount', 0):.2f}"
         ])
     
@@ -10506,9 +10506,9 @@ async def export_sales_history(
         ws.cell(row=row_idx, column=2, value=record['customer_name'])
         ws.cell(row=row_idx, column=3, value=record['customer_phone'])
         ws.cell(row=row_idx, column=4, value=record['date'])
-        ws.cell(row=row_idx, column=5, value=record['total_weight_grams'])
+        ws.cell(row=row_idx, column=5, value=safe_float(record['total_weight_grams']))
         ws.cell(row=row_idx, column=6, value=record['purity_summary'])
-        ws.cell(row=row_idx, column=7, value=record['grand_total'])
+        ws.cell(row=row_idx, column=7, value=safe_float(record['grand_total']))
     
     # Column widths
     ws.column_dimensions['A'].width = 18
@@ -10596,12 +10596,12 @@ async def export_sales_history_pdf(
     # Add sales records (limit to 30 records per page for now)
     for record in data['sales_records'][:30]:
         table_data.append([
-            record.get('invoice_id', '')[:15],
-            record.get('customer_name', '')[:20],
-            record.get('customer_phone', '')[:12],
-            record.get('date', '')[:10],
+            (record.get('invoice_id') or '')[:15],
+            (record.get('customer_name') or '')[:20],
+            (record.get('customer_phone') or '')[:12],
+            (record.get('date') or '')[:10],
             f"{record.get('total_weight_grams', 0):.2f}",
-            record.get('purity_summary', ''),
+            record.get('purity_summary') or '',
             f"{record.get('grand_total', 0):.2f}"
         ])
     
@@ -10843,9 +10843,9 @@ async def export_purchase_history(
     ws[f'A{summary_row}'] = "Total Purchases:"
     ws[f'B{summary_row}'] = data['summary']['total_purchases']
     ws[f'C{summary_row}'] = "Total Weight:"
-    ws[f'D{summary_row}'] = f"{data['summary']['total_weight']:.3f} g"
+    ws[f'D{summary_row}'] = f"{safe_float(data['summary']['total_weight']):.3f} g"
     ws[f'E{summary_row}'] = "Total Amount:"
-    ws[f'F{summary_row}'] = f"{data['summary']['total_amount']:.2f} OMR"
+    ws[f'F{summary_row}'] = f"{safe_float(data['summary']['total_amount']):.2f} OMR"
     
     # Headers
     header_row = summary_row + 2
@@ -10862,10 +10862,10 @@ async def export_purchase_history(
         ws.cell(row=row_idx, column=2, value=record['vendor_phone'])
         ws.cell(row=row_idx, column=3, value=record['date'])
         ws.cell(row=row_idx, column=4, value=record['description'])
-        ws.cell(row=row_idx, column=5, value=record['weight_grams'])
+        ws.cell(row=row_idx, column=5, value=safe_float(record['weight_grams']))
         ws.cell(row=row_idx, column=6, value=record['entered_purity'])
         ws.cell(row=row_idx, column=7, value=record['valuation_purity'])
-        ws.cell(row=row_idx, column=8, value=record['amount_total'])
+        ws.cell(row=row_idx, column=8, value=safe_float(record['amount_total']))
     
     # Column widths
     ws.column_dimensions['A'].width = 25

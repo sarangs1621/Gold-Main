@@ -72,6 +72,7 @@ python -m venv venv
 source venv/bin/activate  # Windows: .\venv\Scripts\activate
 pip install -r requirements.txt
 python init_db.py
+pip install reportlab openpyxl httpx
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 
 ---
