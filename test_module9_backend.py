@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
-BACKEND_URL = "https://full-report-pdf.preview.emergentagent.com/api"
+BACKEND_URL = "https://ledger-exports.preview.emergentagent.com/api"
 
 def test_login():
     """Test login and get auth token"""
