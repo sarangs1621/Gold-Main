@@ -20,6 +20,8 @@ export default function SystemValidationPage() {
   const loadValidationData = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const [checklist, finance, inventory, gold] = await Promise.all([
         API.get('/api/system/validation-checklist'),
         API.get('/api/system/reconcile/finance'),
@@ -31,8 +33,10 @@ export default function SystemValidationPage() {
       setFinanceRecon(finance.data);
       setInventoryRecon(inventory.data);
       setGoldRecon(gold.data);
+      toast.success('Validation data loaded successfully');
     } catch (error) {
       console.error('Failed to load validation data:', error);
+      setError(error.response?.data?.detail || error.message || 'Failed to load validation data');
       toast.error('Failed to load system validation data');
     } finally {
       setLoading(false);
