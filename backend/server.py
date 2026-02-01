@@ -10628,7 +10628,7 @@ async def export_sales_history_pdf(
     current_user: User = Depends(require_permission('reports.view'))
 ):
     """Export sales history report as PDF with ALL records (multi-page support)"""
-    from reportlab.lib.pagesizes = A4, landscape
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import inch
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
