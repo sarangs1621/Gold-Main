@@ -9848,15 +9848,16 @@ async def export_outstanding_pdf(
     # Create table data
     table_data = [['Party Name', 'Type', 'Invoiced', 'Paid', 'Outstanding', '0-7d', '8-30d', '31+d']]
     for party in data['parties'][:20]:  # Limit to 20 parties per page
+        party_name = party.get('party_name') or 'N/A'
         table_data.append([
-            party['party_name'][:25],
-            party['party_type'],
-            f"{party['total_invoiced']:.2f}",
-            f"{party['total_paid']:.2f}",
-            f"{party['total_outstanding']:.2f}",
-            f"{party['overdue_0_7']:.2f}",
-            f"{party['overdue_8_30']:.2f}",
-            f"{party['overdue_31_plus']:.2f}"
+            party_name[:25],
+            party.get('party_type', 'N/A'),
+            f"{party.get('total_invoiced', 0):.2f}",
+            f"{party.get('total_paid', 0):.2f}",
+            f"{party.get('total_outstanding', 0):.2f}",
+            f"{party.get('overdue_0_7', 0):.2f}",
+            f"{party.get('overdue_8_30', 0):.2f}",
+            f"{party.get('overdue_31_plus', 0):.2f}"
         ])
     
     # Create table
