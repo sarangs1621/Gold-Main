@@ -46,26 +46,25 @@ def validate_account_type(account_type: str) -> bool:
 
 def calculate_balance_delta(account_type: str, transaction_type: str, amount: float) -> float:
     """
-    Calculate balance change based on account type and transaction type.
+    Calculate the balance change (+/-) for a transaction based on account type and transaction type.
     
-    ACCOUNTING RULES (NON-NEGOTIABLE):
-    - ASSET/EXPENSE: Debit increases (+), Credit decreases (-)
-    - INCOME/LIABILITY/EQUITY: Credit increases (+), Debit decreases (-)
+    USER-FRIENDLY LOGIC (matches UI labels):
+    - Credit = Money IN = INCREASES balance (+)
+    - Debit = Money OUT = DECREASES balance (-)
+    
+    This applies to all account types for consistency with the UI where:
+    - "Credit (Money IN)" label indicates balance should increase
+    - "Debit (Money OUT)" label indicates balance should decrease
     
     Examples:
-    - Cash (ASSET) + Debit $100 = +$100 balance
-    - Cash (ASSET) + Credit $100 = -$100 balance
-    - Sales Income (INCOME) + Credit $100 = +$100 balance
-    - Sales Income (INCOME) + Debit $100 = -$100 balance
+    - Cash (ASSET) + Credit $100 = +$100 balance (Money IN)
+    - Cash (ASSET) + Debit $100 = -$100 balance (Money OUT)
+    - Any Account + Credit $100 = +$100 balance (Money IN)
+    - Any Account + Debit $100 = -$100 balance (Money OUT)
     """
-    account_type = account_type.lower()
-    
-    if account_type in ['asset', 'expense']:
-        # Debit increases, Credit decreases
-        return amount if transaction_type == 'debit' else -amount
-    else:  # income, liability, equity
-        # Credit increases, Debit decreases
-        return amount if transaction_type == 'credit' else -amount
+    # Simplified logic: Credit = IN (+), Debit = OUT (-)
+    # This matches the UI labels shown to users
+    return amount if transaction_type == 'credit' else -amount
 
 def get_normal_balance(account_type: str) -> str:
     """
