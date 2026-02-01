@@ -68,6 +68,7 @@ export const DashboardLayout = ({ children }) => {
             <NavLink
               key={item.path}
               to={item.path}
+              end
               data-testid={`nav-${item.label.toLowerCase().replace(' ', '-')}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-md transition-all ${
